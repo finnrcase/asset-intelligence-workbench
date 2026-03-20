@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ metadata.asset_name }} ({{ ticker }}) Asset Briefing</title>
+    <style>{{ css }}</style>
+</head>
+<body>
+    <section class="page page-cover">
+        <div class="cover-shell">
+            <div class="cover-topbar">
+                <div class="brand-mark">Asset Intelligence Workbench</div>
+                <div class="document-tag">Internal Briefing | Single Asset Review</div>
+            </div>
+
+            <div class="cover-hero">
+                <div class="cover-pretitle">Asset / Risk Memorandum</div>
+                <h1>{{ metadata.asset_name }}</h1>
+                <div class="cover-ticker">{{ ticker }}</div>
+                <p class="cover-summary-line">
+                    Historical market performance, downside risk, and forward scenario analysis prepared from the local finance analytics workbench.
+                </p>
+            </div>
+
+            <div class="meta-strip">
+                <div class="meta-pill">
+                    <span class="meta-label">Generated</span>
+                    <span class="meta-value">{{ report_generated_at.strftime("%Y-%m-%d %H:%M") }}</span>
+                </div>
+                <div class="meta-pill">
+                    <span class="meta-label">Coverage</span>
+                    <span class="meta-value">{{ coverage.start_date.strftime("%Y-%m-%d") }} to {{ coverage.end_date.strftime("%Y-%m-%d") }}</span>
+                </div>
+                <div class="meta-pill">
+                    <span class="meta-label">Source</span>
+                    <span class="meta-value">{{ metadata.primary_source or "N/A" }}</span>
+                </div>
+            </div>
+
+            <div class="kpi-grid cover-kpi-grid">
+                <div class="kpi-tile">
+                    <div class="kpi-label">Latest Price</div>
+                    <div class="kpi-value">{{ "{:,.2f}".format(coverage.latest_price) }}</div>
+                    <div class="kpi-note">{{ metadata.currency or "N/A" }}</div>
+                </div>
+                <div class="kpi-tile">
+                    <div class="kpi-label">Observations</div>
+                    <div class="kpi-value">{{ coverage.observation_count }}</div>
+                    <div class="kpi-note">Stored daily records</div>
+                </div>
+                <div class="kpi-tile">
+                    <div class="kpi-label">Total Return</div>
+                    <div class="kpi-value">{{ "{:.2%}".format(kpis.total_return) }}</div>
+                    <div class="kpi-note">Holding-period outcome</div>
+                </div>
+                <div class="kpi-tile">
+                    <div class="kpi-label">Annualized Return</div>
+                    <div class="kpi-value">{{ "{:.2%}".format(kpis.annualized_return) }}</div>
+                    <div class="kpi-note">Geometric convention</div>
+                </div>
+                <div class="kpi-tile">
+                    <div class="kpi-label">Annualized Volatility</div>
+                    <div class="kpi-value">{{ "{:.2%}".format(kpis.annualized_volatility) }}</div>
+                    <div class="kpi-note">252-day basis</div>
+                </div>
+                <div class="kpi-tile">
+                    <div class="kpi-label">Max Drawdown</div>
+                    <div class="kpi-value">{{ "{:.2%}".format(kpis.max_drawdown) }}</div>
+                    <div class="kpi-note">Peak-to-trough loss</div>
+                </div>
+            </div>
+
+            <div class="commentary-box executive-box">
+                <div class="box-title">Executive Summary</div>
+                <p>{{ narrative.executive_summary }}</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="page">
+        <div class="section-frame">
+            <div class="section-header">
+                <div class="section-id">01</div>
+                <div class="section-heading-block">
+                    <div class="section-kicker">Market Snapshot</div>
+                    <h2>Asset Profile</h2>
+                </div>
+            </div>
+
+            <div class="profile-card">
+                <div class="profile-grid">
+                    <div class="profile-item">
+                        <div class="profile-label">Asset Name</div>
+                        <div class="profile-value">{{ metadata.asset_name }}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Ticker</div>
+                        <div class="profile-value">{{ metadata.ticker }}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Asset Class</div>
+                        <div class="profile-value">{{ metadata.asset_class or "N/A" }}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Exchange</div>
+                        <div class="profile-value">{{ metadata.exchange or "N/A" }}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Currency</div>
+                        <div class="profile-value">{{ metadata.currency or "N/A" }}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Primary Source</div>
+                        <div class="profile-value">{{ metadata.primary_source or "N/A" }}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Country</div>
+                        <div class="profile-value">{{ metadata.country or "N/A" }}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Industry</div>
+                        <div class="profile-value">{{ metadata.industry or "N/A" }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="coverage-row">
+                <div class="coverage-card">
+                    <div class="coverage-label">Coverage Start</div>
+                    <div class="coverage-value">{{ coverage.start_date.strftime("%Y-%m-%d") }}</div>
+                </div>
+                <div class="coverage-card">
+                    <div class="coverage-label">Coverage End</div>
+                    <div class="coverage-value">{{ coverage.end_date.strftime("%Y-%m-%d") }}</div>
+                </div>
+                <div class="coverage-card">
+                    <div class="coverage-label">Stored Records</div>
+                    <div class="coverage-value">{{ coverage.observation_count }}</div>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="box-title">Recent Market Snapshot</div>
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th class="align-right">Open</th>
+                            <th class="align-right">High</th>
+                            <th class="align-right">Low</th>
+                            <th class="align-right">Close</th>
+                            <th class="align-right">Adj. Close</th>
+                            <th class="align-right">Volume</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in recent_prices %}
+                        <tr>
+                            <td>{{ row.price_date }}</td>
+                            <td class="align-right">{{ row.open_price }}</td>
+                            <td class="align-right">{{ row.high_price }}</td>
+                            <td class="align-right">{{ row.low_price }}</td>
+                            <td class="align-right">{{ row.close_price }}</td>
+                            <td class="align-right">{{ row.adjusted_close }}</td>
+                            <td class="align-right">{{ row.volume }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="page">
+        <div class="section-frame">
+            <div class="section-header">
+                <div class="section-id">02</div>
+                <div class="section-heading-block">
+                    <div class="section-kicker">Historical Performance</div>
+                    <h2>Performance Analysis</h2>
+                </div>
+            </div>
+
+            <div class="memo-split">
+                <div class="memo-left">
+                    <div class="highlight-card">
+                        <div class="highlight-label">Total Return</div>
+                        <div class="highlight-value">{{ "{:.2%}".format(kpis.total_return) }}</div>
+                    </div>
+                    <div class="highlight-card">
+                        <div class="highlight-label">Annualized Return</div>
+                        <div class="highlight-value">{{ "{:.2%}".format(kpis.annualized_return) }}</div>
+                    </div>
+                </div>
+                <div class="memo-right">
+                    <div class="commentary-box">
+                        <div class="box-title">Performance Commentary</div>
+                        <p>{{ narrative.performance_commentary }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-reference-grid">
+                <div class="chart-reference-card">
+                    <div class="chart-ref-title">Price History</div>
+                    <div class="chart-ref-copy">
+                        Absolute price path context provides the baseline for reading realized return experience through the covered period.
+                    </div>
+                </div>
+                <div class="chart-reference-card">
+                    <div class="chart-ref-title">Cumulative Return</div>
+                    <div class="chart-ref-copy">
+                        Compounded return framing highlights how performance accumulated through time rather than only at the period endpoint.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="page">
+        <div class="section-frame">
+            <div class="section-header">
+                <div class="section-id">03</div>
+                <div class="section-heading-block">
+                    <div class="section-kicker">Historical Downside Review</div>
+                    <h2>Risk Analysis</h2>
+                </div>
+            </div>
+
+            <div class="risk-summary-shell">
+                <div class="risk-column">
+                    <div class="risk-metric-panel">
+                        <div class="risk-metric-title">Volatility & Drawdown</div>
+                        <div class="risk-stat">
+                            <span class="risk-stat-label">Annualized Volatility</span>
+                            <span class="risk-stat-value">{{ "{:.2%}".format(kpis.annualized_volatility) }}</span>
+                        </div>
+                        <div class="risk-stat">
+                            <span class="risk-stat-label">Max Drawdown</span>
+                            <span class="risk-stat-value">{{ "{:.2%}".format(kpis.max_drawdown) }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="risk-column">
+                    <div class="risk-metric-panel">
+                        <div class="risk-metric-title">Downside Tail Measures</div>
+                        <div class="risk-stat">
+                            <span class="risk-stat-label">Historical VaR</span>
+                            <span class="risk-stat-value">{{ "{:.2%}".format(kpis.historical_var) }}</span>
+                        </div>
+                        <div class="risk-stat">
+                            <span class="risk-stat-label">Expected Shortfall</span>
+                            <span class="risk-stat-value">{{ "{:.2%}".format(kpis.expected_shortfall) }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="commentary-box">
+                <div class="box-title">Risk Commentary</div>
+                <p>{{ narrative.risk_commentary }}</p>
+            </div>
+
+            <div class="risk-visual-note">
+                Rolling volatility is the primary supporting risk exhibit in the report PDF and is intended to show how realized risk intensity evolved through time.
+            </div>
+        </div>
+    </section>
+
+    <section class="page page-simulation">
+        <div class="section-frame">
+            <div class="section-header">
+                <div class="section-id">04</div>
+                <div class="section-heading-block">
+                    <div class="section-kicker">Forward Scenario Analysis</div>
+                    <h2>Simulation Outlook</h2>
+                </div>
+            </div>
+
+            <div class="simulation-header-band">
+                <div class="simulation-band-card">
+                    <div class="simulation-band-label">Forecast Horizon</div>
+                    <div class="simulation-band-value">{{ settings.forecast_horizon }} trading days</div>
+                </div>
+                <div class="simulation-band-card">
+                    <div class="simulation-band-label">Simulation Count</div>
+                    <div class="simulation-band-value">{{ settings.simulation_count }}</div>
+                </div>
+                <div class="simulation-band-card">
+                    <div class="simulation-band-label">Estimated Daily Drift</div>
+                    <div class="simulation-band-value">{{ "{:.2%}".format(simulation.inputs.daily_drift) }}</div>
+                </div>
+                <div class="simulation-band-card">
+                    <div class="simulation-band-label">Estimated Annualized Volatility</div>
+                    <div class="simulation-band-value">{{ "{:.2%}".format(simulation.inputs.annualized_volatility) }}</div>
+                </div>
+            </div>
+
+            <div class="simulation-body">
+                <div class="simulation-metrics-grid">
+                    <div class="simulation-metric-card">
+                        <div class="simulation-metric-label">Median Terminal Price</div>
+                        <div class="simulation-metric-value">{{ "{:,.2f}".format(simulation.terminal_summary.median_terminal_price) }}</div>
+                    </div>
+                    <div class="simulation-metric-card">
+                        <div class="simulation-metric-label">5th Percentile</div>
+                        <div class="simulation-metric-value">{{ "{:,.2f}".format(simulation.terminal_summary.p05_terminal_price) }}</div>
+                    </div>
+                    <div class="simulation-metric-card">
+                        <div class="simulation-metric-label">95th Percentile</div>
+                        <div class="simulation-metric-value">{{ "{:,.2f}".format(simulation.terminal_summary.p95_terminal_price) }}</div>
+                    </div>
+                    <div class="simulation-metric-card">
+                        <div class="simulation-metric-label">Probability Above Start</div>
+                        <div class="simulation-metric-value">{{ "{:.2%}".format(simulation.terminal_summary.probability_above_start) }}</div>
+                    </div>
+                </div>
+
+                <div class="simulation-commentary-layout">
+                    <div class="commentary-box simulation-commentary-box">
+                        <div class="box-title">Scenario Commentary</div>
+                        <p>{{ narrative.simulation_commentary }}</p>
+                    </div>
+                    <div class="scenario-memo">
+                        <div class="box-title">Interpretive Frame</div>
+                        <p>
+                            Simulation outputs are intended to provide a scenario range for planning discussions, not a point forecast.
+                            Median, lower-tail, and upper-tail outcomes should be interpreted together with the supporting exhibits in the final report PDF.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="page">
+        <div class="section-frame">
+            <div class="section-header">
+                <div class="section-id">05</div>
+                <div class="section-heading-block">
+                    <div class="section-kicker">Definitions & Notes</div>
+                    <h2>Methodology</h2>
+                </div>
+            </div>
+
+            <div class="methodology-columns">
+                <div class="methodology-card">
+                    <div class="box-title">Data Source Notes</div>
+                    <p>{{ methodology.data_source_note }}</p>
+                </div>
+                <div class="methodology-card">
+                    <div class="box-title">Methodology Notes</div>
+                    <p>{{ methodology.analytics_note }}</p>
+                </div>
+                <div class="methodology-card">
+                    <div class="box-title">Simulation Assumptions</div>
+                    <p>{{ methodology.simulation_note }}</p>
+                </div>
+                <div class="methodology-card">
+                    <div class="box-title">Caveats</div>
+                    <p>{{ methodology.caveat_note }}</p>
+                </div>
+            </div>
+        </div>
+    </section>
+</body>
+</html>

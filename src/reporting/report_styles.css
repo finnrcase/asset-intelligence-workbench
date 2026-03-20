@@ -1,0 +1,520 @@
+body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    color: #16222f;
+    font-family: "Georgia", "Times New Roman", serif;
+    line-height: 1.56;
+}
+
+.page {
+    page-break-after: always;
+    padding: 18mm 16mm 18mm 16mm;
+}
+
+.section-frame,
+.cover-shell {
+    width: 100%;
+}
+
+.page-cover {
+    padding-top: 16mm;
+}
+
+.cover-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-top: 3px solid #29485f;
+    padding-top: 8mm;
+    margin-bottom: 18mm;
+}
+
+.brand-mark,
+.document-tag,
+.cover-pretitle,
+.meta-label,
+.kpi-label,
+.box-title,
+.section-kicker,
+.profile-label,
+.coverage-label,
+.risk-metric-title,
+.risk-stat-label,
+.simulation-band-label,
+.simulation-metric-label {
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.brand-mark {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #5d6d7d;
+}
+
+.document-tag {
+    font-size: 9px;
+    color: #41586d;
+}
+
+.cover-hero {
+    margin-bottom: 12mm;
+}
+
+.cover-pretitle {
+    font-size: 9px;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: #6a7887;
+    margin-bottom: 5px;
+}
+
+h1,
+h2 {
+    margin: 0;
+    color: #102131;
+}
+
+h1 {
+    font-size: 32px;
+    line-height: 1.05;
+    letter-spacing: -0.2px;
+}
+
+h2 {
+    font-size: 22px;
+    line-height: 1.12;
+}
+
+.cover-ticker {
+    margin-top: 6px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: #375068;
+}
+
+.cover-summary-line {
+    width: 72%;
+    margin-top: 10px;
+    font-size: 12px;
+    color: #465667;
+}
+
+.meta-strip {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12mm;
+}
+
+.meta-pill {
+    flex: 1;
+    border: 1px solid #dde4ea;
+    padding: 8px 10px;
+    background: #fafcfd;
+}
+
+.meta-label {
+    display: block;
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #6a7887;
+    margin-bottom: 4px;
+}
+
+.meta-value {
+    display: block;
+    font-size: 10px;
+    color: #172330;
+}
+
+.kpi-grid {
+    display: grid;
+    gap: 8px;
+}
+
+.cover-kpi-grid {
+    grid-template-columns: repeat(3, 1fr);
+    margin-bottom: 12mm;
+}
+
+.kpi-tile {
+    border: 1px solid #dce3e9;
+    background: #fbfcfd;
+    padding: 10px 12px;
+    min-height: 48px;
+}
+
+.kpi-label {
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #677687;
+    margin-bottom: 5px;
+}
+
+.kpi-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #102131;
+    line-height: 1.15;
+}
+
+.kpi-note {
+    margin-top: 5px;
+    font-size: 8px;
+    color: #72808d;
+}
+
+.commentary-box,
+.profile-card,
+.table-card,
+.highlight-card,
+.risk-metric-panel,
+.simulation-metric-card,
+.simulation-band-card,
+.scenario-memo,
+.methodology-card {
+    border: 1px solid #dce3e9;
+    background: #fbfcfd;
+}
+
+.commentary-box {
+    padding: 12px 14px;
+}
+
+.executive-box {
+    padding: 14px 16px;
+}
+
+.box-title {
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1.1px;
+    color: #59697a;
+    margin-bottom: 8px;
+}
+
+p {
+    margin: 0;
+    font-size: 11px;
+    color: #1b2834;
+}
+
+.section-header {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    border-bottom: 1px solid #dde4ea;
+    padding-bottom: 8px;
+    margin-bottom: 10mm;
+}
+
+.section-id {
+    width: 10mm;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11px;
+    color: #5d6d7d;
+    line-height: 1.1;
+}
+
+.section-heading-block {
+    flex: 1;
+}
+
+.section-kicker {
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #677787;
+    margin-bottom: 4px;
+}
+
+.profile-card {
+    padding: 0;
+    margin-bottom: 8mm;
+}
+
+.profile-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.profile-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e7ecf0;
+}
+
+.profile-item:nth-child(odd) {
+    border-right: 1px solid #e7ecf0;
+}
+
+.profile-item:nth-last-child(-n+2) {
+    border-bottom: 0;
+}
+
+.profile-label {
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #687787;
+    margin-bottom: 4px;
+}
+
+.profile-value {
+    font-size: 11px;
+    color: #182533;
+}
+
+.coverage-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8mm;
+}
+
+.coverage-card {
+    flex: 1;
+    border-top: 2px solid #29485f;
+    background: #fbfcfd;
+    padding: 8px 10px;
+}
+
+.coverage-label {
+    display: block;
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #677787;
+    margin-bottom: 4px;
+}
+
+.coverage-value {
+    display: block;
+    font-size: 11px;
+}
+
+.table-card {
+    padding: 10px 12px 12px 12px;
+}
+
+.report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9px;
+}
+
+.report-table thead {
+    background: #f1f5f7;
+}
+
+.report-table th,
+.report-table td {
+    padding: 6px 7px;
+    border-bottom: 1px solid #e6ebef;
+}
+
+.report-table th {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 0.9px;
+    color: #2a3d50;
+}
+
+.report-table tbody tr:nth-child(even) {
+    background: #fcfdfe;
+}
+
+.align-right {
+    text-align: right;
+}
+
+.memo-split {
+    display: grid;
+    grid-template-columns: 0.85fr 1.35fr;
+    gap: 10px;
+    margin-bottom: 10mm;
+}
+
+.memo-left {
+    display: grid;
+    gap: 8px;
+}
+
+.highlight-card {
+    padding: 12px 14px;
+}
+
+.highlight-label {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #687787;
+    margin-bottom: 5px;
+}
+
+.highlight-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #102131;
+}
+
+.chart-reference-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.chart-reference-card {
+    border-top: 2px solid #29485f;
+    background: #fbfcfd;
+    padding: 9px 11px;
+}
+
+.chart-ref-title {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #5f7080;
+    margin-bottom: 5px;
+}
+
+.chart-ref-copy {
+    font-size: 10px;
+    color: #536272;
+    line-height: 1.5;
+}
+
+.risk-summary-shell {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 8mm;
+}
+
+.risk-metric-panel {
+    padding: 11px 13px;
+}
+
+.risk-metric-title {
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #5e6f7f;
+    margin-bottom: 8px;
+}
+
+.risk-stat {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 0;
+    border-top: 1px solid #e5eaef;
+}
+
+.risk-stat:first-of-type {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.risk-stat-label {
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #667787;
+}
+
+.risk-stat-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: #102131;
+}
+
+.risk-visual-note {
+    margin-top: 8mm;
+    padding-top: 8px;
+    border-top: 1px solid #e0e6eb;
+    font-size: 10px;
+    color: #667686;
+}
+
+.simulation-header-band {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 9mm;
+}
+
+.simulation-band-card {
+    padding: 9px 10px;
+}
+
+.simulation-band-label {
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #6a7988;
+    margin-bottom: 4px;
+}
+
+.simulation-band-value {
+    font-size: 11px;
+    font-weight: 700;
+    color: #122231;
+}
+
+.simulation-body {
+    display: block;
+}
+
+.simulation-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 9mm;
+}
+
+.simulation-metric-card {
+    padding: 12px 13px;
+}
+
+.simulation-metric-label {
+    font-size: 7px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #687787;
+    margin-bottom: 5px;
+}
+
+.simulation-metric-value {
+    font-size: 17px;
+    font-weight: 700;
+    color: #102131;
+}
+
+.simulation-commentary-layout {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 10px;
+}
+
+.simulation-commentary-box,
+.scenario-memo {
+    padding: 12px 14px;
+}
+
+.methodology-columns {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.methodology-card {
+    padding: 12px 14px;
+    min-height: 72px;
+}
