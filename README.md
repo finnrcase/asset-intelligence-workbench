@@ -6,6 +6,8 @@ The Asset Intelligence Workbench is a portfolio project designed to feel like a 
 
 The goal of the project was to build something closer to a finance, treasury, strategic finance, or risk decision-support tool that could plausibly be used inside a modern company.
 
+https://asset-intelligence-workbench-eq2zbxelprxwjnnxendyqp.streamlit.app/
+
 ## What the project does
 
 The user can enter or select a financial instrument such as a stock, ETF, or crypto asset by entering its ticker/CUSIP at the top right. The system then:
