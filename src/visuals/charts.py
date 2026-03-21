@@ -25,6 +25,9 @@ REPORT_CHART_SIZES = {
     "monte_carlo_paths": (11.4, 5.8),
     "terminal_distribution": (9.2, 4.8),
     "sentiment_trend": (10.4, 4.6),
+    "forecast_history": (10.2, 4.6),
+    "feature_drivers": (8.8, 4.8),
+    "simulation_comparison": (10.8, 5.0),
 }
 
 
@@ -257,6 +260,153 @@ def create_sentiment_trend_chart(sentiment_trend: pd.DataFrame) -> go.Figure:
     return figure
 
 
+def create_prediction_history_chart(prediction_history: pd.DataFrame) -> go.Figure:
+    """Build a chart for recent model-implied expected return and downside probability."""
+
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=prediction_history["as_of_date"],
+            y=prediction_history["predicted_return_20d"],
+            mode="lines+markers",
+            line=dict(color="#0f4c81", width=2.2),
+            marker=dict(size=5),
+            name="Expected Return",
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=prediction_history["as_of_date"],
+            y=prediction_history["downside_probability_20d"],
+            mode="lines+markers",
+            line=dict(color="#b0453b", width=2.0),
+            marker=dict(size=5),
+            name="Probability Negative",
+            yaxis="y2",
+        )
+    )
+    figure.update_layout(
+        template="plotly_white",
+        height=320,
+        margin=dict(l=20, r=20, t=48, b=20),
+        hovermode="x unified",
+        xaxis_title="As Of Date",
+        yaxis=dict(title="Expected Return", tickformat=".1%"),
+        yaxis2=dict(
+            title="Probability Negative",
+            tickformat=".0%",
+            overlaying="y",
+            side="right",
+            showgrid=False,
+            range=[0, 1],
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        title="Model-Informed Forecast History",
+        font=dict(size=12),
+    )
+    figure.update_xaxes(showgrid=False)
+    figure.update_yaxes(gridcolor="rgba(15, 23, 42, 0.08)")
+    return figure
+
+
+def create_feature_driver_chart(feature_drivers: list[dict[str, object]]) -> go.Figure:
+    """Build a bar chart for the strongest current forecast drivers."""
+
+    sorted_drivers = sorted(feature_drivers, key=lambda row: abs(float(row["z_score"])), reverse=True)
+    labels = [str(row["label"]).title() for row in sorted_drivers]
+    z_scores = [float(row["z_score"]) for row in sorted_drivers]
+    colors = ["#0f4c81" if score >= 0 else "#b0453b" for score in z_scores]
+
+    figure = go.Figure(
+        go.Bar(
+            x=z_scores,
+            y=labels,
+            orientation="h",
+            marker_color=colors,
+        )
+    )
+    figure.update_layout(
+        template="plotly_white",
+        height=320,
+        margin=dict(l=20, r=20, t=48, b=20),
+        xaxis_title="Standardized Deviation vs Recent History",
+        yaxis_title="Current Drivers",
+        title="Current Forecast Driver Context",
+        font=dict(size=12),
+    )
+    figure.update_xaxes(showgrid=True, gridcolor="rgba(15, 23, 42, 0.08)")
+    figure.update_yaxes(showgrid=False, autorange="reversed")
+    return figure
+
+
+def create_simulation_comparison_chart(
+    historical_bands: pd.DataFrame,
+    ml_bands: pd.DataFrame,
+) -> go.Figure:
+    """Build a comparison chart for historical-input versus ML-informed median paths."""
+
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=historical_bands.index,
+            y=historical_bands["p50"],
+            mode="lines",
+            line=dict(color="#5b6770", width=2.1),
+            name="Historical Median",
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=ml_bands.index,
+            y=ml_bands["p50"],
+            mode="lines",
+            line=dict(color="#0f4c81", width=2.5),
+            name="ML-Informed Median",
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=ml_bands.index,
+            y=ml_bands["p95"],
+            mode="lines",
+            line=dict(color="rgba(15, 76, 129, 0.0)"),
+            showlegend=False,
+            hoverinfo="skip",
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=ml_bands.index,
+            y=ml_bands["p05"],
+            mode="lines",
+            line=dict(color="rgba(15, 76, 129, 0.0)"),
+            fill="tonexty",
+            fillcolor="rgba(15, 76, 129, 0.10)",
+            name="ML-Informed 5th-95th",
+        )
+    )
+    figure.update_layout(
+        template="plotly_white",
+        height=360,
+        margin=dict(l=20, r=20, t=60, b=64),
+        hovermode="x unified",
+        xaxis_title="Forecast Step",
+        yaxis_title="Price",
+        title="Historical vs ML-Informed Scenario Comparison",
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.22,
+            xanchor="center",
+            x=0.5,
+        ),
+        font=dict(size=12),
+    )
+    figure.update_xaxes(showgrid=False)
+    figure.update_yaxes(showgrid=True, gridcolor="rgba(15, 23, 42, 0.08)")
+    return figure
+
+
 def _save_matplotlib_figure(output_path: str | Path) -> None:
     """Save and close the active matplotlib figure with consistent settings."""
 
@@ -446,5 +596,101 @@ def save_sentiment_trend_chart(
     sentiment_ax.spines["right"].set_color("#ccd6df")
     sentiment_ax.spines["right"].set_linewidth(0.9)
 
+    _save_matplotlib_figure(output_path)
+    return str(output_path)
+
+
+def save_prediction_history_chart(
+    prediction_history: pd.DataFrame,
+    output_path: str | Path,
+) -> str:
+    """Render a static chart for recent model-informed forecast history."""
+
+    fig, ax = plt.subplots(figsize=REPORT_CHART_SIZES["forecast_history"])
+    ax.plot(
+        prediction_history["as_of_date"],
+        prediction_history["predicted_return_20d"],
+        color="#0f4c81",
+        linewidth=REPORT_LINE_WIDTH - 0.2,
+        marker="o",
+        markersize=4,
+    )
+    ax.set_xlabel("As Of Date")
+    _apply_report_axes_style(ax, "Model-Informed Forecast History", "Expected Return")
+    ax.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+
+    secondary_ax = ax.twinx()
+    secondary_ax.plot(
+        prediction_history["as_of_date"],
+        prediction_history["downside_probability_20d"],
+        color="#b0453b",
+        linewidth=REPORT_LINE_WIDTH - 0.6,
+    )
+    secondary_ax.set_ylabel("Probability Negative", fontsize=REPORT_AXIS_LABEL_SIZE, color="#3d4e5f")
+    secondary_ax.tick_params(axis="y", labelsize=REPORT_TICK_LABEL_SIZE, colors="#536272")
+    secondary_ax.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+    secondary_ax.set_ylim(0.0, 1.0)
+    secondary_ax.spines["top"].set_visible(False)
+    secondary_ax.spines["left"].set_visible(False)
+    secondary_ax.spines["right"].set_color("#ccd6df")
+    secondary_ax.spines["right"].set_linewidth(0.9)
+
+    _save_matplotlib_figure(output_path)
+    return str(output_path)
+
+
+def save_feature_driver_chart(
+    feature_drivers: list[dict[str, object]],
+    output_path: str | Path,
+) -> str:
+    """Render a static horizontal bar chart for current forecast drivers."""
+
+    ordered = sorted(feature_drivers, key=lambda row: abs(float(row["z_score"])), reverse=True)
+    labels = [str(row["label"]).title() for row in ordered]
+    z_scores = [float(row["z_score"]) for row in ordered]
+    colors = ["#0f4c81" if score >= 0 else "#b0453b" for score in z_scores]
+
+    fig, ax = plt.subplots(figsize=REPORT_CHART_SIZES["feature_drivers"])
+    ax.barh(labels, z_scores, color=colors, alpha=0.88)
+    ax.invert_yaxis()
+    ax.set_xlabel("Standardized Deviation vs Recent History")
+    _apply_report_axes_style(ax, "Current Forecast Driver Context", "Drivers")
+    _save_matplotlib_figure(output_path)
+    return str(output_path)
+
+
+def save_simulation_comparison_chart(
+    historical_bands: pd.DataFrame,
+    ml_bands: pd.DataFrame,
+    output_path: str | Path,
+) -> str:
+    """Render a static historical-versus-ML simulation comparison chart."""
+
+    fig, ax = plt.subplots(figsize=REPORT_CHART_SIZES["simulation_comparison"])
+    ax.plot(
+        historical_bands.index,
+        historical_bands["p50"],
+        color="#5b6770",
+        linewidth=REPORT_LINE_WIDTH - 0.6,
+        label="Historical Median",
+    )
+    ax.plot(
+        ml_bands.index,
+        ml_bands["p50"],
+        color="#0f4c81",
+        linewidth=REPORT_LINE_WIDTH,
+        label="ML-Informed Median",
+    )
+    ax.fill_between(
+        ml_bands.index,
+        ml_bands["p05"],
+        ml_bands["p95"],
+        color="#0f4c81",
+        alpha=0.10,
+        label="ML-Informed 5th-95th",
+    )
+    ax.set_xlabel("Forecast Step")
+    _apply_report_axes_style(ax, "Historical vs ML-Informed Scenarios", "Price")
+    ax.legend(frameon=False, fontsize=9, loc="upper left")
     _save_matplotlib_figure(output_path)
     return str(output_path)

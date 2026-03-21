@@ -1,5 +1,5 @@
 """
-Reusable database query functions for core asset and price retrieval.
+Reusable database query functions for core asset, price, and ML retrieval.
 """
 
 from __future__ import annotations
@@ -7,9 +7,10 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+import pandas as pd
 from sqlalchemy import Select
-from sqlalchemy import text
 from sqlalchemy import select
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.database.connection import Asset
@@ -147,6 +148,325 @@ def get_recent_news_sentiment(
         params["end_date"] = end_date.isoformat()
 
     statement += " ORDER BY na.published_at DESC LIMIT :limit"
-
     rows = session.execute(text(statement), params).mappings().all()
     return [dict(row) for row in rows]
+
+
+def get_market_feature_source_frame(
+    session: Session,
+    ticker: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> pd.DataFrame:
+    """Return the raw market-history frame used for feature engineering."""
+
+    statement = """
+        SELECT
+            a.id AS asset_id,
+            a.ticker,
+            hp.price_date,
+            hp.open_price,
+            hp.high_price,
+            hp.low_price,
+            hp.close_price,
+            hp.adjusted_close,
+            hp.volume,
+            ds.source_name
+        FROM historical_prices hp
+        JOIN assets a
+          ON hp.asset_id = a.id
+        JOIN data_sources ds
+          ON hp.source_id = ds.id
+        WHERE 1 = 1
+    """
+    params: dict[str, Any] = {}
+    if ticker:
+        statement += " AND a.ticker = :ticker"
+        params["ticker"] = ticker.strip().upper()
+    if start_date:
+        statement += " AND hp.price_date >= :start_date"
+        params["start_date"] = start_date.isoformat()
+    if end_date:
+        statement += " AND hp.price_date <= :end_date"
+        params["end_date"] = end_date.isoformat()
+    statement += " ORDER BY a.ticker, hp.price_date"
+
+    rows = session.execute(text(statement), params).mappings().all()
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    adjusted = pd.to_numeric(frame["adjusted_close"], errors="coerce")
+    close_price = pd.to_numeric(frame["close_price"], errors="coerce")
+    frame["analysis_price"] = adjusted.where(adjusted.notna(), close_price)
+    return frame
+
+
+def get_sentiment_source_frame(
+    session: Session,
+    ticker: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> pd.DataFrame:
+    """Return article-level sentiment rows used for daily feature aggregation."""
+
+    statement = """
+        SELECT
+            a.id AS asset_id,
+            a.ticker,
+            na.published_at,
+            na.sentiment_score,
+            na.sentiment_label
+        FROM news_articles na
+        JOIN assets a
+          ON na.asset_id = a.id
+        WHERE 1 = 1
+    """
+    params: dict[str, Any] = {}
+    if ticker:
+        statement += " AND a.ticker = :ticker"
+        params["ticker"] = ticker.strip().upper()
+    if start_date:
+        statement += " AND DATE(na.published_at) >= :start_date"
+        params["start_date"] = start_date.isoformat()
+    if end_date:
+        statement += " AND DATE(na.published_at) <= :end_date"
+        params["end_date"] = end_date.isoformat()
+    statement += " ORDER BY a.ticker, na.published_at"
+
+    rows = session.execute(text(statement), params).mappings().all()
+    return pd.DataFrame(rows)
+
+
+def get_ml_training_frame(
+    session: Session,
+    ticker: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> pd.DataFrame:
+    """Return the joined SQL feature store used for model training and scoring."""
+
+    statement = """
+        SELECT
+            tf.asset_id,
+            a.ticker,
+            tf.feature_date,
+            tf.analysis_price,
+            tf.close_price,
+            tf.adjusted_close,
+            tf.volume,
+            tf.daily_return,
+            tf.return_lag_1d,
+            tf.return_lag_5d,
+            tf.return_lag_10d,
+            tf.rolling_mean_return_5d,
+            tf.rolling_mean_return_20d,
+            tf.rolling_volatility_10d,
+            tf.rolling_volatility_20d,
+            tf.realized_volatility_20d,
+            tf.recent_realized_volatility_5d,
+            tf.momentum_5d,
+            tf.momentum_10d,
+            tf.momentum_20d,
+            tf.ma_distance_10d,
+            tf.ma_distance_20d,
+            tf.drawdown_from_peak,
+            tf.rolling_drawdown_20d,
+            tf.downside_volatility_20d,
+            tf.intraday_range_pct,
+            tf.volume_change_1d,
+            tf.volume_ratio_20d,
+            tf.volume_zscore_20d,
+            tf.target_forward_return_20d,
+            tf.target_negative_return_20d,
+            tf.feature_version,
+            sf.article_count_1d,
+            sf.sentiment_mean_1d,
+            sf.sentiment_mean_7d,
+            sf.sentiment_std_7d,
+            sf.negative_article_share_7d,
+            sf.positive_article_share_7d,
+            sf.article_count_7d
+        FROM technical_features tf
+        JOIN assets a
+          ON tf.asset_id = a.id
+        LEFT JOIN sentiment_features sf
+          ON tf.asset_id = sf.asset_id
+         AND tf.feature_date = sf.feature_date
+        WHERE 1 = 1
+    """
+    params: dict[str, Any] = {}
+    if ticker:
+        statement += " AND a.ticker = :ticker"
+        params["ticker"] = ticker.strip().upper()
+    if start_date:
+        statement += " AND tf.feature_date >= :start_date"
+        params["start_date"] = start_date.isoformat()
+    if end_date:
+        statement += " AND tf.feature_date <= :end_date"
+        params["end_date"] = end_date.isoformat()
+    statement += " ORDER BY a.ticker, tf.feature_date"
+
+    rows = session.execute(text(statement), params).mappings().all()
+    return pd.DataFrame(rows)
+
+
+def get_ml_predictions(
+    session: Session,
+    ticker: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return stored ML prediction rows for one asset or the full universe."""
+
+    statement = """
+        SELECT
+            a.ticker,
+            mp.as_of_date,
+            mp.prediction_horizon_days,
+            mp.model_run_id,
+            mp.regression_model_name,
+            mp.classification_model_name,
+            mp.predicted_return_20d,
+            mp.downside_probability_20d,
+            mp.predicted_negative_return_flag,
+            mp.prediction_generated_at
+        FROM ml_predictions mp
+        JOIN assets a
+          ON mp.asset_id = a.id
+        WHERE 1 = 1
+    """
+    params: dict[str, Any] = {}
+    if ticker:
+        statement += " AND a.ticker = :ticker"
+        params["ticker"] = ticker.strip().upper()
+    statement += " ORDER BY a.ticker, mp.as_of_date"
+    rows = session.execute(text(statement), params).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def get_latest_ml_prediction(
+    session: Session,
+    ticker: str,
+) -> dict[str, Any] | None:
+    """Return the latest stored ML forecast snapshot for a single asset."""
+
+    statement = """
+        SELECT
+            a.id AS asset_id,
+            a.ticker,
+            mp.as_of_date,
+            mp.prediction_horizon_days,
+            mp.model_run_id,
+            mp.regression_model_name,
+            mp.classification_model_name,
+            mp.predicted_return_20d,
+            mp.downside_probability_20d,
+            mp.predicted_negative_return_flag,
+            mp.prediction_generated_at,
+            mr.run_timestamp,
+            mr.evaluation_summary,
+            mr.feature_version,
+            tf.realized_volatility_20d,
+            tf.recent_realized_volatility_5d,
+            tf.downside_volatility_20d,
+            tf.rolling_volatility_20d,
+            tf.momentum_20d,
+            tf.ma_distance_20d,
+            tf.drawdown_from_peak,
+            tf.volume_ratio_20d,
+            sf.sentiment_mean_1d,
+            sf.sentiment_mean_7d,
+            sf.negative_article_share_7d,
+            sf.article_count_7d
+        FROM ml_predictions mp
+        JOIN assets a
+          ON mp.asset_id = a.id
+        LEFT JOIN ml_model_runs mr
+          ON mp.model_run_id = mr.run_id
+        LEFT JOIN technical_features tf
+          ON mp.asset_id = tf.asset_id
+         AND mp.as_of_date = tf.feature_date
+        LEFT JOIN sentiment_features sf
+          ON mp.asset_id = sf.asset_id
+         AND mp.as_of_date = sf.feature_date
+        WHERE a.ticker = :ticker
+        ORDER BY mp.as_of_date DESC, mp.prediction_generated_at DESC
+        LIMIT 1
+    """
+    row = session.execute(
+        text(statement),
+        {"ticker": ticker.strip().upper()},
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+def get_ml_prediction_history(
+    session: Session,
+    ticker: str,
+    limit: int = 60,
+) -> list[dict[str, Any]]:
+    """Return recent stored prediction history for a single asset."""
+
+    statement = """
+        SELECT
+            a.ticker,
+            mp.as_of_date,
+            mp.prediction_horizon_days,
+            mp.regression_model_name,
+            mp.classification_model_name,
+            mp.predicted_return_20d,
+            mp.downside_probability_20d,
+            mp.predicted_negative_return_flag,
+            mp.prediction_generated_at
+        FROM ml_predictions mp
+        JOIN assets a
+          ON mp.asset_id = a.id
+        WHERE a.ticker = :ticker
+        ORDER BY mp.as_of_date DESC, mp.prediction_generated_at DESC
+        LIMIT :limit
+    """
+    rows = session.execute(
+        text(statement),
+        {"ticker": ticker.strip().upper(), "limit": limit},
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def get_feature_driver_frame(
+    session: Session,
+    ticker: str,
+    lookback_rows: int = 252,
+) -> pd.DataFrame:
+    """Return recent joined feature history for lightweight driver interpretation."""
+
+    statement = """
+        SELECT
+            tf.feature_date,
+            tf.realized_volatility_20d,
+            tf.recent_realized_volatility_5d,
+            tf.downside_volatility_20d,
+            tf.rolling_volatility_20d,
+            tf.momentum_20d,
+            tf.ma_distance_20d,
+            tf.drawdown_from_peak,
+            tf.volume_ratio_20d,
+            sf.sentiment_mean_7d,
+            sf.negative_article_share_7d,
+            sf.article_count_7d
+        FROM technical_features tf
+        JOIN assets a
+          ON tf.asset_id = a.id
+        LEFT JOIN sentiment_features sf
+          ON tf.asset_id = sf.asset_id
+         AND tf.feature_date = sf.feature_date
+        WHERE a.ticker = :ticker
+        ORDER BY tf.feature_date DESC
+        LIMIT :limit
+    """
+    rows = session.execute(
+        text(statement),
+        {"ticker": ticker.strip().upper(), "limit": lookback_rows},
+    ).mappings().all()
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    frame["feature_date"] = pd.to_datetime(frame["feature_date"])
+    return frame.sort_values("feature_date").reset_index(drop=True)

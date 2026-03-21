@@ -196,3 +196,104 @@ def run_monte_carlo_simulation(
         "terminal_summary": terminal_summary,
     }
 
+
+def build_ml_informed_simulation_inputs(
+    historical_inputs: dict[str, float],
+    ml_forecast_snapshot: dict[str, Any] | None,
+    periods_per_year: int = DEFAULT_TRADING_DAYS,
+) -> dict[str, float]:
+    """
+    Build explainable ML-informed simulation inputs from the latest forecast.
+
+    Assumptions:
+    - model-implied expected return anchors drift
+    - recent realized volatility from the latest feature row acts as the
+      uncertainty proxy when available
+    - downside probability is retained as scenario context for the UI/report
+    """
+
+    if not ml_forecast_snapshot:
+        return historical_inputs.copy()
+
+    horizon_days = int(ml_forecast_snapshot.get("prediction_horizon_days") or 20)
+    expected_return = ml_forecast_snapshot.get("predicted_return_20d")
+    downside_probability = ml_forecast_snapshot.get("downside_probability_20d")
+    predicted_volatility = ml_forecast_snapshot.get("predicted_volatility_20d")
+    downside_volatility = ml_forecast_snapshot.get("downside_volatility_20d")
+
+    daily_drift = historical_inputs["daily_drift"]
+    if expected_return is not None and horizon_days > 0:
+        daily_drift = float(expected_return) / float(horizon_days)
+
+    daily_volatility = historical_inputs["daily_volatility"]
+    if predicted_volatility is not None:
+        daily_volatility = float(predicted_volatility) / np.sqrt(periods_per_year)
+    elif downside_volatility is not None:
+        daily_volatility = max(daily_volatility, float(downside_volatility))
+
+    return {
+        "daily_drift": float(daily_drift),
+        "daily_volatility": float(daily_volatility),
+        "annualized_drift": float(daily_drift * periods_per_year),
+        "annualized_volatility": float(daily_volatility * np.sqrt(periods_per_year)),
+        "observations": float(historical_inputs.get("observations", 0.0)),
+        "forecast_horizon_days": float(horizon_days),
+        "downside_probability": float(downside_probability) if downside_probability is not None else float("nan"),
+    }
+
+
+def run_comparative_monte_carlo_simulation(
+    price_data: pd.Series | pd.DataFrame,
+    price_column: str | None = None,
+    ml_forecast_snapshot: dict[str, Any] | None = None,
+    horizon_days: int = 252,
+    simulation_count: int = 1000,
+    periods_per_year: int = DEFAULT_TRADING_DAYS,
+    random_seed: int | None = 42,
+) -> dict[str, Any]:
+    """
+    Compare historical-input and ML-informed simulations side by side.
+    """
+
+    historical_result = run_monte_carlo_simulation(
+        price_data=price_data,
+        price_column=price_column,
+        horizon_days=horizon_days,
+        simulation_count=simulation_count,
+        periods_per_year=periods_per_year,
+        random_seed=random_seed,
+    )
+
+    ml_inputs = build_ml_informed_simulation_inputs(
+        historical_inputs=historical_result["inputs"],
+        ml_forecast_snapshot=ml_forecast_snapshot,
+        periods_per_year=periods_per_year,
+    )
+
+    if isinstance(price_data, pd.DataFrame):
+        if price_column is None:
+            raise ValueError("`price_column` is required when price data is a DataFrame.")
+        starting_price = float(pd.to_numeric(price_data[price_column], errors="coerce").dropna().iloc[-1])
+    else:
+        starting_price = float(pd.to_numeric(price_data, errors="coerce").dropna().iloc[-1])
+
+    ml_paths = simulate_price_paths(
+        starting_price=starting_price,
+        drift=ml_inputs["daily_drift"],
+        volatility=ml_inputs["daily_volatility"],
+        horizon_days=horizon_days,
+        simulation_count=simulation_count,
+        random_seed=random_seed,
+    )
+    ml_bands = compute_percentile_bands(ml_paths)
+    ml_terminal_summary = summarize_terminal_outcomes(ml_paths)
+
+    return {
+        "historical": historical_result,
+        "ml_informed": {
+            "inputs": ml_inputs,
+            "paths": ml_paths,
+            "bands": ml_bands,
+            "terminal_summary": ml_terminal_summary,
+        },
+    }

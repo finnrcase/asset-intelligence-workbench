@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from datetime import datetime
 import os
 from pathlib import Path
@@ -12,7 +13,6 @@ import uuid
 
 from fpdf import FPDF
 
-from src.reporting.report_data import build_asset_report_context
 from src.visuals import charts
 
 
@@ -114,7 +114,10 @@ def _ensure_report_context_compatibility(context: dict) -> dict:
         context["drawdown_frame"] = price_frame
 
     if "terminal_percentiles" not in context:
-        terminal_summary = context["simulation"]["terminal_summary"]
+        if "historical" in context["simulation"]:
+            terminal_summary = context["simulation"]["historical"]["terminal_summary"]
+        else:
+            terminal_summary = context["simulation"]["terminal_summary"]
         context["terminal_percentiles"] = [
             {"label": "5th Percentile", "value": _format_number(terminal_summary["p05_terminal_price"])},
             {"label": "25th Percentile", "value": _format_number(terminal_summary["p25_terminal_price"])},
@@ -123,7 +126,54 @@ def _ensure_report_context_compatibility(context: dict) -> dict:
             {"label": "95th Percentile", "value": _format_number(terminal_summary["p95_terminal_price"])},
         ]
 
+    if "ml_terminal_percentiles" not in context:
+        ml_summary = context.get("simulation", {}).get("ml_informed", {}).get("terminal_summary")
+        if ml_summary is not None:
+            context["ml_terminal_percentiles"] = [
+                {"label": "5th Percentile", "value": _format_number(ml_summary["p05_terminal_price"])},
+                {"label": "25th Percentile", "value": _format_number(ml_summary["p25_terminal_price"])},
+                {"label": "Median", "value": _format_number(ml_summary["median_terminal_price"])},
+                {"label": "75th Percentile", "value": _format_number(ml_summary["p75_terminal_price"])},
+                {"label": "95th Percentile", "value": _format_number(ml_summary["p95_terminal_price"])},
+            ]
+
+    if "ml_forecast" not in context:
+        try:
+            from src.utils import app_data as app_data_module
+
+            app_data_module = importlib.reload(app_data_module)
+            context["ml_forecast"] = app_data_module.build_ml_forecast_summary(context["ticker"])
+        except Exception:
+            context["ml_forecast"] = {
+                "available": False,
+                "snapshot": None,
+                "prediction_history": [],
+                "feature_drivers": [],
+                "interpretation": "Model-informed forecast data was unavailable during report generation.",
+            }
+
+    context.setdefault("narrative", {})
+    context["narrative"].setdefault(
+        "ml_commentary",
+        context["ml_forecast"].get(
+            "interpretation",
+            "Model-informed forecast data was unavailable during report generation.",
+        ),
+    )
+    context["narrative"].setdefault(
+        "comparative_simulation_commentary",
+        "Comparative historical and ML-informed scenario commentary was unavailable during report generation.",
+    )
+
     return context
+
+
+def _load_report_data_module():
+    """Load the report-data module lazily to avoid stale imports during app reruns."""
+
+    from src.reporting import report_data as report_data_module
+
+    return importlib.reload(report_data_module)
 
 
 class AssetBriefingPDF(FPDF):
@@ -707,8 +757,8 @@ def _render_simulation_page(pdf: FPDF, context: dict, paths_chart: str, terminal
     band_items = [
         ("Forecast Horizon", f"{context['settings']['forecast_horizon']} trading days"),
         ("Simulation Count", f"{context['settings']['simulation_count']:,}"),
-        ("Estimated Daily Drift", _format_percent(context["simulation"]["inputs"]["daily_drift"])),
-        ("Ann. Volatility", _format_percent(context["simulation"]["inputs"]["annualized_volatility"])),
+        ("Estimated Daily Drift", _format_percent(context["simulation"]["historical"]["inputs"]["daily_drift"])),
+        ("Ann. Volatility", _format_percent(context["simulation"]["historical"]["inputs"]["annualized_volatility"])),
     ]
     for idx, (label, value) in enumerate(band_items):
         x = pdf.l_margin + idx * (band_w + 4)
@@ -723,10 +773,10 @@ def _render_simulation_page(pdf: FPDF, context: dict, paths_chart: str, terminal
     metric_w = 29
     metrics_y = lower_y
     sim_metrics = [
-        ("Median Terminal Price", _format_number(context["simulation"]["terminal_summary"]["median_terminal_price"])),
-        ("Probability Above Start", _format_percent(context["simulation"]["terminal_summary"]["probability_above_start"])),
-        ("5th Percentile", _format_number(context["simulation"]["terminal_summary"]["p05_terminal_price"])),
-        ("95th Percentile", _format_number(context["simulation"]["terminal_summary"]["p95_terminal_price"])),
+        ("Median Terminal Price", _format_number(context["simulation"]["historical"]["terminal_summary"]["median_terminal_price"])),
+        ("Probability Above Start", _format_percent(context["simulation"]["historical"]["terminal_summary"]["probability_above_start"])),
+        ("5th Percentile", _format_number(context["simulation"]["historical"]["terminal_summary"]["p05_terminal_price"])),
+        ("95th Percentile", _format_number(context["simulation"]["historical"]["terminal_summary"]["p95_terminal_price"])),
     ]
     for idx, (label, value) in enumerate(sim_metrics):
         row = idx // 2
@@ -752,11 +802,105 @@ def _render_simulation_page(pdf: FPDF, context: dict, paths_chart: str, terminal
     )
 
 
+def _render_ml_forecast_page(
+    pdf: FPDF,
+    context: dict,
+    forecast_history_chart: str | None,
+    feature_driver_chart: str | None,
+    simulation_comparison_chart: str | None,
+) -> None:
+    """Render a dedicated model-informed forecast and risk outlook page."""
+
+    pdf.add_page()
+    _draw_section_header(pdf, "05", "Model-Informed Forecast & Risk Outlook", "Forecasting Layer")
+
+    ml_summary = context["ml_forecast"]
+    if not ml_summary["available"]:
+        _draw_fitted_text_box(
+            pdf,
+            pdf.l_margin,
+            pdf.get_y(),
+            176,
+            36,
+            "Forecast Availability",
+            ml_summary["interpretation"],
+        )
+        return
+
+    snapshot = ml_summary["snapshot"]
+    top_y = pdf.get_y()
+    metric_w = (pdf.w - pdf.l_margin - pdf.r_margin - 12) / 4
+    metric_items = [
+        ("Expected 20-Day Return", _format_percent(snapshot["predicted_return_20d"])),
+        ("Probability Negative", _format_percent(snapshot["downside_probability_20d"])),
+        ("Volatility Proxy", _format_percent(snapshot["predicted_volatility_20d"])),
+        ("Regime Context", snapshot["regime_label"]),
+    ]
+    for idx, (label, value) in enumerate(metric_items):
+        x = pdf.l_margin + idx * (metric_w + 4)
+        _draw_labeled_box(pdf, x, top_y, metric_w, 16, label, value)
+
+    row_y = top_y + 22
+    if forecast_history_chart is not None:
+        pdf.image(forecast_history_chart, x=pdf.l_margin, y=row_y, w=108)
+    else:
+        _draw_note_strip(
+            pdf,
+            pdf.l_margin,
+            row_y,
+            108,
+            26,
+            "Prediction history is not yet deep enough to show a stable trend exhibit.",
+        )
+
+    _draw_fitted_text_box(
+        pdf,
+        pdf.l_margin + 112,
+        row_y,
+        64,
+        54,
+        "Forecast Interpretation",
+        context["narrative"]["ml_commentary"],
+    )
+
+    lower_y = 154
+    if feature_driver_chart is not None:
+        pdf.image(feature_driver_chart, x=pdf.l_margin, y=lower_y, w=84)
+    else:
+        _draw_note_strip(
+            pdf,
+            pdf.l_margin,
+            lower_y,
+            84,
+            22,
+            "Current forecast driver context is unavailable for this snapshot.",
+        )
+
+    if simulation_comparison_chart is not None:
+        pdf.image(simulation_comparison_chart, x=pdf.l_margin + 88, y=lower_y, w=88)
+
+    _draw_terminal_percentile_table(
+        pdf,
+        pdf.l_margin,
+        218,
+        context["ml_terminal_percentiles"],
+    )
+    _draw_fitted_text_box(
+        pdf,
+        pdf.l_margin + 64,
+        218,
+        112,
+        26,
+        "Scenario Comparison",
+        context["narrative"]["comparative_simulation_commentary"],
+    )
+
+
 def _render_sentiment_page(pdf: FPDF, context: dict, sentiment_chart: str | None) -> None:
     """Render a restrained sentiment context page for the report."""
 
     pdf.add_page()
-    _draw_section_header(pdf, "05", "Stored News Context", "Sentiment Review")
+    _draw_section_header(pdf, "06", "Stored News Context", "Sentiment Review")
 
     summary = context["sentiment"]["summary"]
     top_y = pdf.get_y()
@@ -814,7 +958,7 @@ def _render_methodology_page(pdf: FPDF, context: dict) -> None:
     """Render a cleaner, scannable methodology page."""
 
     pdf.add_page()
-    _draw_section_header(pdf, "06", "Definitions & Notes", "Methodology")
+    _draw_section_header(pdf, "07", "Definitions & Notes", "Methodology")
     y = pdf.get_y()
     items = [
         ("Data Source Notes", context["methodology"]["data_source_note"]),
@@ -864,7 +1008,8 @@ def generate_asset_pdf_report(
     Returns the absolute saved PDF path as a string.
     """
 
-    context = build_asset_report_context(
+    report_data_module = _load_report_data_module()
+    context = report_data_module.build_asset_report_context(
         ticker=ticker,
         forecast_horizon=forecast_horizon,
         simulation_count=simulation_count,
@@ -912,14 +1057,37 @@ def generate_asset_pdf_report(
                 context["sentiment"]["trend"],
                 tmp / "sentiment_trend.png",
             )
+        forecast_history_chart = None
+        if (
+            context["ml_forecast"]["available"]
+            and not context["ml_forecast"]["prediction_history"].empty
+            and context["ml_forecast"]["prediction_history"].shape[0] >= 2
+        ):
+            forecast_history_chart = charts.save_prediction_history_chart(
+                context["ml_forecast"]["prediction_history"],
+                tmp / "forecast_history.png",
+            )
+        feature_driver_chart = None
+        if context["ml_forecast"]["available"] and context["ml_forecast"]["feature_drivers"]:
+            feature_driver_chart = charts.save_feature_driver_chart(
+                context["ml_forecast"]["feature_drivers"],
+                tmp / "feature_drivers.png",
+            )
         paths_chart = charts.save_monte_carlo_paths_chart(
-            context["simulation"]["paths"],
+            context["simulation"]["historical"]["paths"],
             tmp / "monte_carlo_paths.png",
         )
         terminal_chart = charts.save_terminal_distribution_chart(
-            context["simulation"]["paths"],
+            context["simulation"]["historical"]["paths"],
             tmp / "terminal_distribution.png",
         )
+        simulation_comparison_chart = None
+        if context["ml_forecast"]["available"]:
+            simulation_comparison_chart = charts.save_simulation_comparison_chart(
+                context["simulation"]["historical"]["bands"],
+                context["simulation"]["ml_informed"]["bands"],
+                tmp / "simulation_comparison.png",
+            )
 
         pdf = AssetBriefingPDF(format="A4", unit="mm")
         pdf.set_auto_page_break(auto=True, margin=15)
@@ -930,6 +1098,13 @@ def generate_asset_pdf_report(
         _render_performance_page(pdf, context, price_chart, cumulative_chart)
         _render_risk_page(pdf, context, rolling_vol_chart, drawdown_chart)
         _render_simulation_page(pdf, context, paths_chart, terminal_chart)
+        _render_ml_forecast_page(
+            pdf,
+            context,
+            forecast_history_chart,
+            feature_driver_chart,
+            simulation_comparison_chart,
+        )
         _render_sentiment_page(pdf, context, sentiment_chart)
         _render_methodology_page(pdf, context)
 

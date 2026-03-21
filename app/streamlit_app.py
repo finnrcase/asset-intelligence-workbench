@@ -20,8 +20,33 @@ from src.analytics.returns import compute_annualized_return
 from src.analytics.returns import compute_total_return
 from src.analytics.risk import build_risk_summary
 from src.analytics.risk import compute_rolling_volatility
-from src.analytics.simulation import run_monte_carlo_simulation
 APP_IMPORT_ERRORS: list[ModuleNotFoundError] = []
+
+try:
+    from src.analytics import simulation as simulation_module
+
+    simulation_module = importlib.reload(simulation_module)
+except ModuleNotFoundError as exc:
+    simulation_module = None
+    APP_IMPORT_ERRORS.append(exc)
+
+if simulation_module is not None:
+    run_comparative_monte_carlo_simulation = getattr(
+        simulation_module,
+        "run_comparative_monte_carlo_simulation",
+        None,
+    )
+    if run_comparative_monte_carlo_simulation is None:
+        legacy_simulation = getattr(simulation_module, "run_monte_carlo_simulation")
+
+        def run_comparative_monte_carlo_simulation(*args, **kwargs):
+            """Fallback when the app is running against a stale simulation module."""
+
+            historical_result = legacy_simulation(*args, **kwargs)
+            return {
+                "historical": historical_result,
+                "ml_informed": historical_result,
+            }
 
 try:
     from src.utils import app_data
@@ -87,6 +112,51 @@ def _render_simulation_metrics(terminal_summary: dict[str, float]) -> None:
         "P(End Below Start)",
         _format_percent(terminal_summary["probability_below_start"]),
     )
+
+
+def _render_ml_forecast_metrics(ml_summary: dict[str, object]) -> None:
+    """Render top-line ML forecast KPIs for the selected asset."""
+
+    snapshot = ml_summary["snapshot"]
+    metric_columns = st.columns(5)
+    metric_columns[0].metric(
+        "Model-Implied Expected 20-Day Return",
+        _format_percent(snapshot["predicted_return_20d"]),
+    )
+    metric_columns[1].metric(
+        "Probability of Negative Return",
+        _format_percent(snapshot["downside_probability_20d"]),
+    )
+    metric_columns[2].metric(
+        "Volatility Proxy",
+        _format_percent(snapshot["predicted_volatility_20d"]),
+    )
+    metric_columns[3].metric(
+        "Downside Volatility",
+        _format_percent(snapshot["downside_volatility_20d"]),
+    )
+    metric_columns[4].metric(
+        "Regime Context",
+        snapshot["regime_label"],
+    )
+
+
+def _render_latest_ml_snapshot(ml_summary: dict[str, object]) -> None:
+    """Render a compact latest-forecast snapshot when history is too short for a chart."""
+
+    snapshot = ml_summary["snapshot"]
+    snapshot_rows = [
+        {
+            "As Of Date": str(snapshot.get("as_of_date") or "N/A"),
+            "Forecast Horizon": f"{int(snapshot.get('prediction_horizon_days') or 20)} trading days",
+            "Expected Return": _format_percent(snapshot.get("predicted_return_20d")),
+            "Probability Negative": _format_percent(snapshot.get("downside_probability_20d")),
+            "Volatility Proxy": _format_percent(snapshot.get("predicted_volatility_20d")),
+            "Regime": snapshot.get("regime_label") or "N/A",
+        }
+    ]
+    st.markdown("**Latest Forecast Snapshot**")
+    st.dataframe(snapshot_rows, use_container_width=True, hide_index=True)
 
 
 def _render_header() -> None:
@@ -425,6 +495,7 @@ def main() -> None:
             st.warning(st.session_state.open_report_status["message"])
 
     return_frame = build_return_frame(price_frame, price_column="analysis_price")
+    ml_summary = app_data.build_ml_forecast_summary(st.session_state.active_ticker)
     rolling_volatility = compute_rolling_volatility(
         return_frame["daily_return"],
         window=ROLLING_VOLATILITY_WINDOW,
@@ -485,6 +556,57 @@ def main() -> None:
     st.dataframe(recent_prices, use_container_width=True, hide_index=True)
 
     st.divider()
+    st.subheader("Model-Informed Forecast")
+    st.caption(
+        "This section frames the machine-learning layer as a probabilistic return and downside-risk "
+        "overlay for decision support, not as a direct price predictor."
+    )
+
+    if not ml_summary["available"]:
+        st.info(ml_summary["interpretation"])
+    else:
+        _render_ml_forecast_metrics(ml_summary)
+        ml_chart_left, ml_chart_right = st.columns(2)
+        prediction_history = ml_summary["prediction_history"]
+        if not prediction_history.empty and prediction_history.shape[0] >= 2:
+            with ml_chart_left:
+                st.plotly_chart(
+                    charts.create_prediction_history_chart(prediction_history),
+                    use_container_width=True,
+                )
+        else:
+            with ml_chart_left:
+                _render_latest_ml_snapshot(ml_summary)
+
+        feature_drivers = ml_summary["feature_drivers"]
+        if feature_drivers:
+            with ml_chart_right:
+                st.plotly_chart(
+                    charts.create_feature_driver_chart(feature_drivers),
+                    use_container_width=True,
+                )
+        else:
+            with ml_chart_right:
+                st.info("Feature driver context is not available for the current forecast snapshot.")
+
+        st.markdown("**Forecast Interpretation**")
+        st.info(ml_summary["interpretation"])
+
+        if feature_drivers:
+            st.markdown("**Current Forecast Drivers**")
+            driver_rows = [
+                {
+                    "Driver": driver["label"].title(),
+                    "Current Value": _format_number(driver["current_value"]),
+                    "Recent Mean": _format_number(driver["historical_mean"]),
+                    "Deviation vs History": f"{driver['z_score']:+.2f} sigma",
+                    "Context": driver["direction"].title(),
+                }
+                for driver in feature_drivers
+            ]
+            st.dataframe(driver_rows, use_container_width=True, hide_index=True)
+
+    st.divider()
     st.subheader("News Sentiment")
 
     sentiment_rows = app_data.load_recent_news_articles(
@@ -529,9 +651,10 @@ def main() -> None:
     st.subheader("Forward Simulation")
 
     try:
-        simulation_result = run_monte_carlo_simulation(
+        simulation_result = run_comparative_monte_carlo_simulation(
             price_frame,
             price_column="analysis_price",
+            ml_forecast_snapshot=ml_summary["snapshot"],
             horizon_days=forecast_horizon,
             simulation_count=simulation_count,
         )
@@ -539,16 +662,18 @@ def main() -> None:
         st.info(f"Simulation requires a sufficient clean return history. Detail: {exc}")
         return
 
-    simulation_inputs = simulation_result["inputs"]
-    terminal_summary = simulation_result["terminal_summary"]
+    historical_simulation = simulation_result["historical"]
+    ml_informed_simulation = simulation_result["ml_informed"]
+    simulation_inputs = historical_simulation["inputs"]
+    terminal_summary = historical_simulation["terminal_summary"]
 
     input_columns = st.columns(3)
     input_columns[0].metric(
-        "Estimated Daily Drift",
+        "Historical Daily Drift",
         _format_percent(simulation_inputs["daily_drift"]),
     )
     input_columns[1].metric(
-        "Estimated Annualized Volatility",
+        "Historical Annualized Volatility",
         _format_percent(simulation_inputs["annualized_volatility"]),
     )
     input_columns[2].metric(
@@ -557,27 +682,81 @@ def main() -> None:
     )
 
     st.caption(
-        "Monte Carlo simulation uses historical daily returns to estimate drift "
-        "and volatility, then projects a range of possible future price paths."
+        "The base scenario uses historical daily returns to estimate drift and volatility. "
+        "The ML-informed scenario overlays the latest model-implied expected return and current "
+        "risk proxy so analysts can compare a purely historical calibration with a current forecast context."
     )
     _render_simulation_metrics(terminal_summary)
+
+    if ml_summary["available"]:
+        st.markdown("**ML-Informed Scenario Overlay**")
+        ml_input_columns = st.columns(4)
+        ml_input_columns[0].metric(
+            "ML-Implied Daily Drift",
+            _format_percent(ml_informed_simulation["inputs"]["daily_drift"]),
+        )
+        ml_input_columns[1].metric(
+            "ML Volatility Input",
+            _format_percent(ml_informed_simulation["inputs"]["annualized_volatility"]),
+        )
+        ml_input_columns[2].metric(
+            "Downside Risk Context",
+            _format_percent(ml_summary["snapshot"]["downside_probability_20d"]),
+        )
+        ml_input_columns[3].metric(
+            "ML Regime",
+            ml_summary["snapshot"]["regime_label"],
+        )
 
     simulation_chart_left, simulation_chart_right = st.columns(2)
     with simulation_chart_left:
         st.plotly_chart(
-            charts.create_monte_carlo_paths_chart(simulation_result["paths"]),
+            charts.create_monte_carlo_paths_chart(historical_simulation["paths"]),
             use_container_width=True,
         )
     with simulation_chart_right:
         st.plotly_chart(
-            charts.create_terminal_distribution_chart(simulation_result["paths"]),
+            charts.create_terminal_distribution_chart(historical_simulation["paths"]),
             use_container_width=True,
         )
 
     st.plotly_chart(
-        charts.create_percentile_band_chart(simulation_result["bands"]),
+        charts.create_percentile_band_chart(historical_simulation["bands"]),
         use_container_width=True,
     )
+
+    if ml_summary["available"]:
+        comparison_left, comparison_right = st.columns(2)
+        with comparison_left:
+            st.plotly_chart(
+                charts.create_simulation_comparison_chart(
+                    historical_simulation["bands"],
+                    ml_informed_simulation["bands"],
+                ),
+                use_container_width=True,
+            )
+        with comparison_right:
+            st.plotly_chart(
+                charts.create_terminal_distribution_chart(ml_informed_simulation["paths"]),
+                use_container_width=True,
+            )
+
+        comparison_summary = st.columns(3)
+        comparison_summary[0].metric(
+            "Historical Median Terminal Price",
+            _format_number(historical_simulation["terminal_summary"]["median_terminal_price"]),
+        )
+        comparison_summary[1].metric(
+            "ML-Informed Median Terminal Price",
+            _format_number(ml_informed_simulation["terminal_summary"]["median_terminal_price"]),
+        )
+        comparison_summary[2].metric(
+            "Median Scenario Gap",
+            _format_number(
+                ml_informed_simulation["terminal_summary"]["median_terminal_price"]
+                - historical_simulation["terminal_summary"]["median_terminal_price"]
+            ),
+        )
 
 
 if __name__ == "__main__":

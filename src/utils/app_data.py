@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 from sqlalchemy.exc import OperationalError
@@ -22,6 +23,7 @@ from src.database import queries as database_queries
 DEFAULT_LOOKBACK_DAYS = 365
 DEFAULT_SENTIMENT_PAGE_SIZE = 12
 DEFAULT_SENTIMENT_FRESHNESS_HOURS = 24
+DEFAULT_ML_PREDICTION_HISTORY = 60
 
 
 def load_available_tickers() -> list[dict[str, Any]]:
@@ -296,6 +298,374 @@ def load_recent_news_articles(ticker: str, limit: int = 10) -> list[dict[str, An
             return []
 
 
+def load_latest_ml_forecast(ticker: str) -> dict[str, Any] | None:
+    """Return the latest ML forecast snapshot for an asset if available."""
+
+    with session_scope() as session:
+        get_latest_prediction = getattr(database_queries, "get_latest_ml_prediction", None)
+        if get_latest_prediction is None:
+            return None
+        try:
+            return get_latest_prediction(session, ticker=ticker)
+        except OperationalError:
+            return None
+
+
+def load_ml_prediction_history(
+    ticker: str,
+    limit: int = DEFAULT_ML_PREDICTION_HISTORY,
+) -> list[dict[str, Any]]:
+    """Return recent stored ML prediction history for charting/reporting."""
+
+    with session_scope() as session:
+        get_prediction_history = getattr(database_queries, "get_ml_prediction_history", None)
+        if get_prediction_history is None:
+            return []
+        try:
+            return get_prediction_history(session, ticker=ticker, limit=limit)
+        except OperationalError:
+            return []
+
+
+def load_ml_feature_driver_frame(ticker: str) -> pd.DataFrame:
+    """Return recent feature history used to contextualize the latest forecast."""
+
+    with session_scope() as session:
+        get_driver_frame = getattr(database_queries, "get_feature_driver_frame", None)
+        if get_driver_frame is None:
+            return pd.DataFrame()
+        try:
+            return get_driver_frame(session, ticker=ticker)
+        except OperationalError:
+            return pd.DataFrame()
+
+
+def ensure_ml_forecast_for_ticker(ticker: str) -> dict[str, Any]:
+    """Build and store a model-informed forecast on demand when one is missing."""
+
+    normalized_ticker = normalize_app_ticker(ticker)
+    if not normalized_ticker:
+        return {
+            "success": False,
+            "ticker": "",
+            "status": "invalid_input",
+            "message": "A valid ticker is required before an ML forecast can be built.",
+        }
+
+    existing_snapshot = load_latest_ml_forecast(normalized_ticker)
+    if existing_snapshot is not None:
+        return {
+            "success": True,
+            "ticker": normalized_ticker,
+            "status": "database",
+            "message": f"{normalized_ticker} model-informed forecast was loaded from the local database.",
+        }
+
+    try:
+        import importlib
+
+        from src.database import loaders as loaders_module
+        from src.database import queries as queries_module
+        from src.features import feature_store as feature_store_module
+        from src.ml import train as train_module
+        from src.ml import predict as predict_module
+
+        loaders_module = importlib.reload(loaders_module)
+        queries_module = importlib.reload(queries_module)
+        feature_store_module = importlib.reload(feature_store_module)
+        train_module = importlib.reload(train_module)
+        predict_module = importlib.reload(predict_module)
+
+        load_ml_model_run = getattr(loaders_module, "load_ml_model_run", None)
+        refresh_feature_store = getattr(feature_store_module, "refresh_feature_store")
+        train_models_from_feature_store = getattr(train_module, "train_models_from_feature_store")
+        predict_from_feature_store = getattr(predict_module, "predict_from_feature_store")
+    except Exception as exc:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "ml_import_error",
+            "message": f"ML forecasting components could not be loaded. Detail: {exc}",
+        }
+
+    try:
+        with session_scope() as session:
+            refresh_feature_store(session=session, ticker=normalized_ticker)
+
+            training_error: Exception | None = None
+            training_result = None
+            for training_scope in (None, normalized_ticker):
+                try:
+                    training_result = train_models_from_feature_store(
+                        session=session,
+                        ticker=training_scope,
+                    )
+                    break
+                except Exception as exc:
+                    training_error = exc
+
+            if training_result is None:
+                raise ValueError(
+                    "Unable to train a model-informed forecast from the currently stored feature history."
+                ) from training_error
+
+            run_id = f"app_ml_run_{uuid4().hex}"
+            if callable(load_ml_model_run):
+                load_ml_model_run(
+                    session=session,
+                    run_record={
+                        "run_id": run_id,
+                        "run_timestamp": pd.Timestamp.utcnow().to_pydatetime(),
+                        "regression_model_name": training_result["selected_models"]["regression"],
+                        "classification_model_name": training_result["selected_models"]["classification"],
+                        "training_start_date": str(training_result["training_frame_dates"]["start_date"]),
+                        "training_end_date": str(training_result["training_frame_dates"]["end_date"]),
+                        "evaluation_summary": training_result["evaluation"],
+                        "feature_version": "v1",
+                        "notes": f"On-demand app forecast build for {normalized_ticker}",
+                    },
+                )
+
+            prediction_frame = predict_from_feature_store(
+                session=session,
+                training_result=training_result,
+                ticker=normalized_ticker,
+                model_run_id=run_id,
+                write_to_sql=True,
+            )
+    except Exception as exc:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "ml_build_error",
+            "message": (
+                f"Unable to build a model-informed forecast for {normalized_ticker} from the current "
+                f"local data. Detail: {exc}"
+            ),
+        }
+
+    if prediction_frame.empty:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "ml_no_prediction",
+            "message": f"The forecast pipeline completed without producing a stored prediction for {normalized_ticker}.",
+        }
+
+    return {
+        "success": True,
+        "ticker": normalized_ticker,
+        "status": "generated",
+        "message": f"{normalized_ticker} model-informed forecast was generated from the local feature store.",
+    }
+
+
+def prepare_ml_prediction_history_frame(prediction_rows: list[dict[str, Any]]) -> pd.DataFrame:
+    """Prepare stored prediction history for charting and report usage."""
+
+    if not prediction_rows:
+        return pd.DataFrame()
+
+    frame = pd.DataFrame(prediction_rows).copy()
+    frame["as_of_date"] = pd.to_datetime(frame["as_of_date"], errors="coerce")
+    frame["prediction_generated_at"] = pd.to_datetime(
+        frame["prediction_generated_at"],
+        errors="coerce",
+    )
+    numeric_columns = [
+        "predicted_return_20d",
+        "downside_probability_20d",
+        "prediction_horizon_days",
+    ]
+    for column in numeric_columns:
+        if column in frame.columns:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    return frame.dropna(subset=["as_of_date"]).sort_values("as_of_date").reset_index(drop=True)
+
+
+def _safe_float(value: Any) -> float | None:
+    """Return a float when possible, otherwise None."""
+
+    if value is None:
+        return None
+    numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if pd.isna(numeric):
+        return None
+    return float(numeric)
+
+
+def _classify_return_outlook(expected_return: float | None) -> str:
+    """Map expected return into a simple finance-oriented outlook label."""
+
+    if expected_return is None:
+        return "Unavailable"
+    if expected_return >= 0.03:
+        return "Constructive"
+    if expected_return <= -0.03:
+        return "Defensive"
+    return "Balanced"
+
+
+def _classify_downside_context(probability_negative: float | None) -> str:
+    """Map downside probability into a planning-oriented regime label."""
+
+    if probability_negative is None:
+        return "Unavailable"
+    if probability_negative >= 0.60:
+        return "Elevated downside risk"
+    if probability_negative <= 0.40:
+        return "Contained downside risk"
+    return "Mixed downside risk"
+
+
+def derive_ml_feature_drivers(
+    forecast_snapshot: dict[str, Any] | None,
+    feature_history: pd.DataFrame,
+    top_n: int = 5,
+) -> list[dict[str, Any]]:
+    """
+    Derive lightweight driver context from the latest feature row versus history.
+
+    This is intentionally a transparent context layer, not a claim of exact model
+    attribution, because the current product stores predictions but not serialized
+    feature-importance artifacts.
+    """
+
+    if not forecast_snapshot or feature_history.empty:
+        return []
+
+    latest_feature_date = pd.to_datetime(forecast_snapshot.get("as_of_date"), errors="coerce")
+    if pd.isna(latest_feature_date):
+        return []
+
+    candidate_features = {
+        "momentum_20d": "20-day momentum",
+        "ma_distance_20d": "distance vs 20-day moving average",
+        "drawdown_from_peak": "drawdown from recent peak",
+        "realized_volatility_20d": "20-day realized volatility",
+        "recent_realized_volatility_5d": "5-day realized volatility",
+        "downside_volatility_20d": "20-day downside volatility",
+        "rolling_volatility_20d": "20-day rolling volatility",
+        "volume_ratio_20d": "volume vs 20-day average",
+        "sentiment_mean_7d": "7-day average sentiment",
+        "negative_article_share_7d": "7-day negative article share",
+        "article_count_7d": "7-day article count",
+    }
+
+    history = feature_history.copy()
+    history["feature_date"] = pd.to_datetime(history["feature_date"], errors="coerce")
+    latest_row = history.loc[history["feature_date"] == latest_feature_date]
+    if latest_row.empty:
+        latest_row = history.tail(1)
+    latest_row = latest_row.iloc[0]
+
+    driver_rows: list[dict[str, Any]] = []
+    for column, label in candidate_features.items():
+        if column not in history.columns:
+            continue
+        series = pd.to_numeric(history[column], errors="coerce").dropna()
+        current_value = pd.to_numeric(pd.Series([latest_row.get(column)]), errors="coerce").iloc[0]
+        if pd.isna(current_value) or len(series) < 20:
+            continue
+        mean_value = float(series.mean())
+        std_value = float(series.std(ddof=1))
+        z_score = 0.0 if std_value == 0.0 or pd.isna(std_value) else float((current_value - mean_value) / std_value)
+        direction = "supportive" if current_value >= mean_value else "cautionary"
+        driver_rows.append(
+            {
+                "feature": column,
+                "label": label,
+                "current_value": float(current_value),
+                "historical_mean": mean_value,
+                "z_score": z_score,
+                "direction": direction,
+            }
+        )
+
+    ranked = sorted(driver_rows, key=lambda row: abs(row["z_score"]), reverse=True)
+    return ranked[:top_n]
+
+
+def build_ml_forecast_summary(ticker: str) -> dict[str, Any]:
+    """Build an app/report-friendly ML forecast summary for one asset."""
+
+    snapshot = load_latest_ml_forecast(ticker)
+    build_status = None
+    if snapshot is None:
+        build_status = ensure_ml_forecast_for_ticker(ticker)
+        if build_status.get("success"):
+            snapshot = load_latest_ml_forecast(ticker)
+
+    prediction_history = prepare_ml_prediction_history_frame(load_ml_prediction_history(ticker))
+    feature_history = load_ml_feature_driver_frame(ticker)
+    drivers = derive_ml_feature_drivers(snapshot, feature_history)
+
+    if snapshot is None:
+        return {
+            "available": False,
+            "snapshot": None,
+            "prediction_history": prediction_history,
+            "feature_drivers": [],
+            "build_status": build_status,
+            "interpretation": (
+                build_status["message"]
+                if build_status and build_status.get("message")
+                else "No stored model-informed forecast is currently available for this asset."
+            ),
+        }
+
+    expected_return = _safe_float(snapshot.get("predicted_return_20d"))
+    downside_probability = _safe_float(snapshot.get("downside_probability_20d"))
+    predicted_volatility = _safe_float(snapshot.get("realized_volatility_20d"))
+    short_horizon_volatility = _safe_float(snapshot.get("recent_realized_volatility_5d"))
+    downside_volatility = _safe_float(snapshot.get("downside_volatility_20d"))
+    forecast_horizon = int(snapshot.get("prediction_horizon_days") or 20)
+
+    regime_label = (
+        f"{_classify_return_outlook(expected_return)} / "
+        f"{_classify_downside_context(downside_probability)}"
+    )
+
+    interpretation_parts = [
+        f"The latest model-implied {forecast_horizon}-day expected return is "
+        f"{expected_return:.2%}." if expected_return is not None else
+        "The latest model-implied expected return is unavailable.",
+        (
+            f"The probability of a negative {forecast_horizon}-day return is "
+            f"{downside_probability:.2%}, framing the current downside risk context as "
+            f"{_classify_downside_context(downside_probability).lower()}."
+        )
+        if downside_probability is not None
+        else "The latest downside-risk probability is unavailable."
+    ]
+    if predicted_volatility is not None:
+        interpretation_parts.append(
+            f"Recent realized volatility is {predicted_volatility:.2%}, which serves as a practical uncertainty proxy for scenario work."
+        )
+    if drivers:
+        driver_labels = ", ".join(driver["label"] for driver in drivers[:3])
+        interpretation_parts.append(
+            f"The most unusual current drivers versus recent history are {driver_labels}."
+        )
+
+    return {
+        "available": True,
+        "build_status": build_status,
+        "snapshot": {
+            **snapshot,
+            "predicted_return_20d": expected_return,
+            "downside_probability_20d": downside_probability,
+            "predicted_volatility_20d": predicted_volatility,
+            "short_horizon_volatility_5d": short_horizon_volatility,
+            "downside_volatility_20d": downside_volatility,
+            "regime_label": regime_label,
+        },
+        "prediction_history": prediction_history,
+        "feature_drivers": drivers,
+        "interpretation": " ".join(interpretation_parts),
+    }
+
+
 def prepare_sentiment_frame(article_rows: list[dict[str, Any]]) -> pd.DataFrame:
     """Prepare stored sentiment rows into app-friendly pandas structures."""
 
@@ -451,6 +821,18 @@ def ensure_sentiment_for_ticker(
     try:
         from src.ingestion.bootstrap_sentiment import ingest_sentiment_for_ticker
     except Exception as exc:
+        detail = str(exc)
+        if "401" in detail or "invalid api key" in detail.lower() or "unauthorized" in detail.lower():
+            return {
+                "success": False,
+                "ticker": normalized_ticker,
+                "status": "credentials_error",
+                "message": (
+                    f"Stored sentiment is unavailable for {normalized_ticker}, and the configured news API "
+                    "credentials were rejected by the provider. Add a valid API key to enable on-demand sentiment ingestion."
+                ),
+                "fetched": False,
+            }
         return {
             "success": False,
             "ticker": normalized_ticker,

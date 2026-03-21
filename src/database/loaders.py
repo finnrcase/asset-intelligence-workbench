@@ -1,35 +1,51 @@
 """
-Reusable data loading functions for asset master data and price history.
+Reusable data loading functions for asset master data, price history, and ML outputs.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from sqlalchemy import text
+import pandas as pd
 from sqlalchemy import select
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.database.connection import Asset
 from src.database.connection import DataSource
 from src.database.connection import HistoricalPrice
+from src.utils.config import get_config
+
+
+CONFIG = get_config()
 
 
 def _normalize_ticker(ticker: str) -> str:
-    """Normalize tickers to a consistent storage format."""
-
     return ticker.strip().upper()
 
 
 def _coerce_date(value: date | datetime | str) -> date:
-    """Convert supported date inputs into a `date` object."""
-
     if isinstance(value, date) and not isinstance(value, datetime):
         return value
     if isinstance(value, datetime):
         return value.date()
     return date.fromisoformat(value)
+
+
+def _execute_sql_file(session: Session, file_name: str) -> None:
+    sql_path = Path(CONFIG.project_root) / "sql" / file_name
+    sql_text = sql_path.read_text(encoding="utf-8")
+    connection = session.connection()
+    for statement in [chunk.strip() for chunk in sql_text.split(";") if chunk.strip()]:
+        connection.exec_driver_sql(statement)
+
+
+def ensure_ml_tables(session: Session) -> None:
+    _execute_sql_file(session, "feature_tables.sql")
+    _execute_sql_file(session, "prediction_tables.sql")
 
 
 def get_or_create_data_source(
@@ -38,8 +54,6 @@ def get_or_create_data_source(
     source_type: str,
     source_url: str | None = None,
 ) -> DataSource:
-    """Return an existing data source or create it if it does not yet exist."""
-
     existing = session.scalar(
         select(DataSource).where(DataSource.source_name == source_name.strip())
     )
@@ -67,14 +81,6 @@ def upsert_asset_metadata(
     source_type: str = "market_data",
     source_url: str | None = None,
 ) -> list[Asset]:
-    """
-    Insert or update asset master records.
-
-    Expected keys per asset record:
-    `ticker`, `asset_name`, and optionally `asset_class`, `exchange`, `currency`,
-    `sector`, `industry`, `country`, `is_active`.
-    """
-
     primary_source = None
     if source_name:
         primary_source = get_or_create_data_source(
@@ -85,16 +91,12 @@ def upsert_asset_metadata(
         )
 
     persisted_assets: list[Asset] = []
-
     for record in assets:
         ticker = _normalize_ticker(record["ticker"])
         asset = session.scalar(select(Asset).where(Asset.ticker == ticker))
 
         if asset is None:
-            asset = Asset(
-                ticker=ticker,
-                asset_name=record["asset_name"].strip(),
-            )
+            asset = Asset(ticker=ticker, asset_name=record["asset_name"].strip())
             session.add(asset)
 
         asset.asset_name = record["asset_name"].strip()
@@ -106,7 +108,6 @@ def upsert_asset_metadata(
         asset.country = record.get("country")
         asset.is_active = record.get("is_active", True)
         asset.updated_at = datetime.utcnow()
-
         if primary_source is not None:
             asset.primary_source_id = primary_source.id
 
@@ -124,14 +125,6 @@ def load_historical_prices(
     source_type: str = "market_data",
     source_url: str | None = None,
 ) -> list[HistoricalPrice]:
-    """
-    Insert or update daily historical price observations for a ticker.
-
-    Expected keys per price record:
-    `price_date`, `close_price`, and optionally `open_price`, `high_price`,
-    `low_price`, `adjusted_close`, `volume`, `ingestion_timestamp`.
-    """
-
     normalized_ticker = _normalize_ticker(ticker)
     asset = session.scalar(select(Asset).where(Asset.ticker == normalized_ticker))
     if asset is None:
@@ -147,7 +140,6 @@ def load_historical_prices(
     )
 
     persisted_prices: list[HistoricalPrice] = []
-
     for row in price_rows:
         price_date = _coerce_date(row["price_date"])
         existing = session.scalar(
@@ -164,7 +156,6 @@ def load_historical_prices(
             price_date=price_date,
             close_price=row["close_price"],
         )
-
         if existing is None:
             session.add(price_record)
 
@@ -174,9 +165,7 @@ def load_historical_prices(
         price_record.close_price = row["close_price"]
         price_record.adjusted_close = row.get("adjusted_close")
         price_record.volume = row.get("volume")
-        price_record.ingestion_timestamp = row.get(
-            "ingestion_timestamp", datetime.utcnow()
-        )
+        price_record.ingestion_timestamp = row.get("ingestion_timestamp", datetime.utcnow())
 
         session.flush()
         persisted_prices.append(price_record)
@@ -192,15 +181,6 @@ def load_news_articles(
     source_type: str = "news_api",
     source_url: str | None = None,
 ) -> list[dict[str, Any]]:
-    """
-    Insert or update normalized news article records for a ticker.
-
-    Expected keys per article record:
-    `headline`, `url`, `published_at`, `sentiment_score`, `sentiment_label`, and
-    optionally `provider_article_id`, `publisher_name`, `summary`, `query_text`,
-    `ingestion_timestamp`.
-    """
-
     normalized_ticker = _normalize_ticker(ticker)
     asset = session.scalar(select(Asset).where(Asset.ticker == normalized_ticker))
     if asset is None:
@@ -216,7 +196,6 @@ def load_news_articles(
     )
 
     persisted_articles: list[dict[str, Any]] = []
-
     for article in articles:
         headline = str(article.get("headline", "")).strip()
         url = str(article.get("url", "")).strip()
@@ -293,31 +272,13 @@ def load_news_articles(
                 text(
                     """
                     INSERT INTO news_articles (
-                        asset_id,
-                        source_id,
-                        provider_article_id,
-                        publisher_name,
-                        headline,
-                        summary,
-                        url,
-                        published_at,
-                        sentiment_score,
-                        sentiment_label,
-                        query_text,
-                        ingestion_timestamp
+                        asset_id, source_id, provider_article_id, publisher_name, headline,
+                        summary, url, published_at, sentiment_score, sentiment_label,
+                        query_text, ingestion_timestamp
                     ) VALUES (
-                        :asset_id,
-                        :source_id,
-                        :provider_article_id,
-                        :publisher_name,
-                        :headline,
-                        :summary,
-                        :url,
-                        :published_at,
-                        :sentiment_score,
-                        :sentiment_label,
-                        :query_text,
-                        :ingestion_timestamp
+                        :asset_id, :source_id, :provider_article_id, :publisher_name, :headline,
+                        :summary, :url, :published_at, :sentiment_score, :sentiment_label,
+                        :query_text, :ingestion_timestamp
                     )
                     """
                 ),
@@ -351,3 +312,186 @@ def load_news_articles(
 
     session.flush()
     return persisted_articles
+
+
+def load_technical_features(session: Session, feature_rows: pd.DataFrame | Sequence[Mapping[str, Any]]) -> int:
+    ensure_ml_tables(session)
+    frame = pd.DataFrame(feature_rows).copy()
+    if frame.empty:
+        return 0
+
+    records = frame.to_dict(orient="records")
+    for record in records:
+        session.execute(
+            text(
+                """
+                INSERT INTO technical_features (
+                    asset_id, feature_date, analysis_price, close_price, adjusted_close, volume,
+                    daily_return, return_lag_1d, return_lag_5d, return_lag_10d,
+                    rolling_mean_return_5d, rolling_mean_return_20d,
+                    rolling_volatility_10d, rolling_volatility_20d,
+                    realized_volatility_20d, recent_realized_volatility_5d,
+                    momentum_5d, momentum_10d, momentum_20d,
+                    ma_distance_10d, ma_distance_20d,
+                    drawdown_from_peak, rolling_drawdown_20d, downside_volatility_20d,
+                    intraday_range_pct, volume_change_1d, volume_ratio_20d, volume_zscore_20d,
+                    target_forward_return_20d, target_negative_return_20d, feature_version
+                ) VALUES (
+                    :asset_id, :feature_date, :analysis_price, :close_price, :adjusted_close, :volume,
+                    :daily_return, :return_lag_1d, :return_lag_5d, :return_lag_10d,
+                    :rolling_mean_return_5d, :rolling_mean_return_20d,
+                    :rolling_volatility_10d, :rolling_volatility_20d,
+                    :realized_volatility_20d, :recent_realized_volatility_5d,
+                    :momentum_5d, :momentum_10d, :momentum_20d,
+                    :ma_distance_10d, :ma_distance_20d,
+                    :drawdown_from_peak, :rolling_drawdown_20d, :downside_volatility_20d,
+                    :intraday_range_pct, :volume_change_1d, :volume_ratio_20d, :volume_zscore_20d,
+                    :target_forward_return_20d, :target_negative_return_20d, :feature_version
+                )
+                ON CONFLICT(asset_id, feature_date) DO UPDATE SET
+                    analysis_price = excluded.analysis_price,
+                    close_price = excluded.close_price,
+                    adjusted_close = excluded.adjusted_close,
+                    volume = excluded.volume,
+                    daily_return = excluded.daily_return,
+                    return_lag_1d = excluded.return_lag_1d,
+                    return_lag_5d = excluded.return_lag_5d,
+                    return_lag_10d = excluded.return_lag_10d,
+                    rolling_mean_return_5d = excluded.rolling_mean_return_5d,
+                    rolling_mean_return_20d = excluded.rolling_mean_return_20d,
+                    rolling_volatility_10d = excluded.rolling_volatility_10d,
+                    rolling_volatility_20d = excluded.rolling_volatility_20d,
+                    realized_volatility_20d = excluded.realized_volatility_20d,
+                    recent_realized_volatility_5d = excluded.recent_realized_volatility_5d,
+                    momentum_5d = excluded.momentum_5d,
+                    momentum_10d = excluded.momentum_10d,
+                    momentum_20d = excluded.momentum_20d,
+                    ma_distance_10d = excluded.ma_distance_10d,
+                    ma_distance_20d = excluded.ma_distance_20d,
+                    drawdown_from_peak = excluded.drawdown_from_peak,
+                    rolling_drawdown_20d = excluded.rolling_drawdown_20d,
+                    downside_volatility_20d = excluded.downside_volatility_20d,
+                    intraday_range_pct = excluded.intraday_range_pct,
+                    volume_change_1d = excluded.volume_change_1d,
+                    volume_ratio_20d = excluded.volume_ratio_20d,
+                    volume_zscore_20d = excluded.volume_zscore_20d,
+                    target_forward_return_20d = excluded.target_forward_return_20d,
+                    target_negative_return_20d = excluded.target_negative_return_20d,
+                    feature_version = excluded.feature_version
+                """
+            ),
+            record,
+        )
+    return int(len(records))
+
+
+def load_sentiment_features(session: Session, feature_rows: pd.DataFrame | Sequence[Mapping[str, Any]]) -> int:
+    ensure_ml_tables(session)
+    frame = pd.DataFrame(feature_rows).copy()
+    if frame.empty:
+        return 0
+
+    records = frame.to_dict(orient="records")
+    for record in records:
+        session.execute(
+            text(
+                """
+                INSERT INTO sentiment_features (
+                    asset_id, feature_date, article_count_1d, sentiment_mean_1d,
+                    sentiment_mean_7d, sentiment_std_7d, negative_article_share_7d,
+                    positive_article_share_7d, article_count_7d
+                ) VALUES (
+                    :asset_id, :feature_date, :article_count_1d, :sentiment_mean_1d,
+                    :sentiment_mean_7d, :sentiment_std_7d, :negative_article_share_7d,
+                    :positive_article_share_7d, :article_count_7d
+                )
+                ON CONFLICT(asset_id, feature_date) DO UPDATE SET
+                    article_count_1d = excluded.article_count_1d,
+                    sentiment_mean_1d = excluded.sentiment_mean_1d,
+                    sentiment_mean_7d = excluded.sentiment_mean_7d,
+                    sentiment_std_7d = excluded.sentiment_std_7d,
+                    negative_article_share_7d = excluded.negative_article_share_7d,
+                    positive_article_share_7d = excluded.positive_article_share_7d,
+                    article_count_7d = excluded.article_count_7d
+                """
+            ),
+            record,
+        )
+    return int(len(records))
+
+
+def load_ml_model_run(session: Session, run_record: Mapping[str, Any]) -> None:
+    ensure_ml_tables(session)
+    payload = dict(run_record)
+    if isinstance(payload.get("evaluation_summary"), (dict, list)):
+        payload["evaluation_summary"] = json.dumps(payload["evaluation_summary"], default=str)
+
+    session.execute(
+        text(
+            """
+            INSERT INTO ml_model_runs (
+                run_id, run_timestamp, regression_model_name, classification_model_name,
+                training_start_date, training_end_date, evaluation_summary, feature_version, notes
+            ) VALUES (
+                :run_id, :run_timestamp, :regression_model_name, :classification_model_name,
+                :training_start_date, :training_end_date, :evaluation_summary, :feature_version, :notes
+            )
+            ON CONFLICT(run_id) DO UPDATE SET
+                run_timestamp = excluded.run_timestamp,
+                regression_model_name = excluded.regression_model_name,
+                classification_model_name = excluded.classification_model_name,
+                training_start_date = excluded.training_start_date,
+                training_end_date = excluded.training_end_date,
+                evaluation_summary = excluded.evaluation_summary,
+                feature_version = excluded.feature_version,
+                notes = excluded.notes
+            """
+        ),
+        payload,
+    )
+
+
+def load_ml_predictions(
+    session: Session,
+    prediction_rows: pd.DataFrame | Sequence[Mapping[str, Any]],
+    model_run_id: str | None = None,
+) -> int:
+    ensure_ml_tables(session)
+    frame = pd.DataFrame(prediction_rows).copy()
+    if frame.empty:
+        return 0
+
+    records = frame.to_dict(orient="records")
+    for record in records:
+        record["model_run_id"] = model_run_id
+        if isinstance(record.get("prediction_generated_at"), pd.Timestamp):
+            record["prediction_generated_at"] = record["prediction_generated_at"].to_pydatetime()
+        session.execute(
+            text(
+                """
+                INSERT INTO ml_predictions (
+                    asset_id, as_of_date, prediction_horizon_days, model_run_id,
+                    regression_model_name, classification_model_name,
+                    predicted_return_20d, downside_probability_20d,
+                    predicted_negative_return_flag, prediction_generated_at
+                ) VALUES (
+                    :asset_id, :as_of_date, :prediction_horizon_days, :model_run_id,
+                    :regression_model_name, :classification_model_name,
+                    :predicted_return_20d, :downside_probability_20d,
+                    :predicted_negative_return_flag, :prediction_generated_at
+                )
+                ON CONFLICT(
+                    asset_id, as_of_date, prediction_horizon_days,
+                    regression_model_name, classification_model_name
+                ) DO UPDATE SET
+                    model_run_id = excluded.model_run_id,
+                    predicted_return_20d = excluded.predicted_return_20d,
+                    downside_probability_20d = excluded.downside_probability_20d,
+                    predicted_negative_return_flag = excluded.predicted_negative_return_flag,
+                    prediction_generated_at = excluded.prediction_generated_at
+                """
+            ),
+            record,
+        )
+    return int(len(records))
+

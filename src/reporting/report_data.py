@@ -18,7 +18,7 @@ from src.analytics.returns import compute_annualized_return
 from src.analytics.returns import compute_total_return
 from src.analytics.risk import build_risk_summary
 from src.analytics.risk import compute_rolling_volatility
-from src.analytics.simulation import run_monte_carlo_simulation
+from src.analytics.simulation import run_comparative_monte_carlo_simulation
 from src.utils import app_data
 
 
@@ -29,13 +29,13 @@ VAR_CONFIDENCE_LEVEL = 0.95
 def _format_percent(value: float) -> str:
     """Format a float as a percentage string."""
 
-    return "N/A" if value != value else f"{value:.2%}"
+    return "N/A" if value is None or value != value else f"{value:.2%}"
 
 
 def _format_number(value: float) -> str:
     """Format a float as a numeric string."""
 
-    return "N/A" if value != value else f"{value:,.2f}"
+    return "N/A" if value is None or value != value else f"{value:,.2f}"
 
 
 def _build_executive_summary(
@@ -121,6 +121,41 @@ def _build_sentiment_commentary(sentiment_summary: dict[str, Any]) -> str:
         f"Positive, neutral, and negative article counts were {sentiment_summary['positive_count']}, "
         f"{sentiment_summary['neutral_count']}, and {sentiment_summary['negative_count']} respectively. "
         "This section is intended as directional context for the briefing rather than deep NLP inference."
+    )
+
+
+def _build_ml_commentary(ml_summary: dict[str, Any]) -> str:
+    """Build a concise analyst-language paragraph for the ML forecast layer."""
+
+    if not ml_summary["available"]:
+        return (
+            "No stored model-informed forecast was available at report generation time, so the forward outlook "
+            "continues to rely on historical-input scenario analysis only."
+        )
+
+    snapshot = ml_summary["snapshot"]
+    return (
+        f"The latest model-implied expected {int(snapshot['prediction_horizon_days'])}-day return is "
+        f"{_format_percent(snapshot['predicted_return_20d'])}, while the probability of a negative forward "
+        f"return is {_format_percent(snapshot['downside_probability_20d'])}. "
+        f"Recent realized volatility of {_format_percent(snapshot['predicted_volatility_20d'])} is used as a "
+        "practical uncertainty proxy for the ML-informed scenario overlay. "
+        f"Current regime context is summarized as {snapshot['regime_label'].lower()}."
+    )
+
+
+def _build_comparative_simulation_commentary(
+    historical_terminal_summary: dict[str, float],
+    ml_terminal_summary: dict[str, float],
+) -> str:
+    """Build a short comparison paragraph for historical and ML-informed scenarios."""
+
+    return (
+        f"The historical-input simulation produces a median terminal price of "
+        f"{_format_number(historical_terminal_summary['median_terminal_price'])}, while the ML-informed "
+        f"scenario produces {_format_number(ml_terminal_summary['median_terminal_price'])}. "
+        "The comparison is intended as a decision-support overlay that incorporates the current return and "
+        "downside-risk forecast into the scenario range rather than replacing historical context."
     )
 
 
@@ -220,9 +255,11 @@ def build_asset_report_context(
     )
     total_return = compute_total_return(price_frame, price_column="analysis_price")
     annualized_return = compute_annualized_return(price_frame, price_column="analysis_price")
-    simulation_result = run_monte_carlo_simulation(
+    ml_summary = app_data.build_ml_forecast_summary(ticker)
+    simulation_result = run_comparative_monte_carlo_simulation(
         price_frame,
         price_column="analysis_price",
+        ml_forecast_snapshot=ml_summary["snapshot"],
         horizon_days=forecast_horizon,
         simulation_count=simulation_count,
     )
@@ -261,13 +298,17 @@ def build_asset_report_context(
         "rolling_volatility": rolling_volatility,
         "risk_summary": risk_summary,
         "simulation": simulation_result,
+        "ml_forecast": ml_summary,
         "sentiment": {
             "summary": sentiment_summary,
             "trend": sentiment_trend,
             "recent_headlines": _prepare_recent_headline_rows(sentiment_rows, rows=5),
         },
         "terminal_percentiles": _prepare_terminal_percentile_rows(
-            simulation_result["terminal_summary"]
+            simulation_result["historical"]["terminal_summary"]
+        ),
+        "ml_terminal_percentiles": _prepare_terminal_percentile_rows(
+            simulation_result["ml_informed"]["terminal_summary"]
         ),
         "recent_prices": _prepare_recent_price_rows(recent_price_table),
         "narrative": {
@@ -283,8 +324,13 @@ def build_asset_report_context(
             ),
             "risk_commentary": _build_risk_commentary(risk_summary),
             "simulation_commentary": _build_simulation_commentary(
-                simulation_result["terminal_summary"],
+                simulation_result["historical"]["terminal_summary"],
                 forecast_horizon,
+            ),
+            "ml_commentary": _build_ml_commentary(ml_summary),
+            "comparative_simulation_commentary": _build_comparative_simulation_commentary(
+                simulation_result["historical"]["terminal_summary"],
+                simulation_result["ml_informed"]["terminal_summary"],
             ),
             "sentiment_commentary": _build_sentiment_commentary(sentiment_summary),
         },
@@ -299,8 +345,9 @@ def build_asset_report_context(
                 "Historical VaR and Expected Shortfall are computed from the empirical daily return distribution."
             ),
             "simulation_note": (
-                "Monte Carlo price paths use a GBM-style process calibrated from historical daily drift and volatility. "
-                "Simulation outputs are scenario-oriented and should not be interpreted as forecasts with certainty."
+                "Monte Carlo price paths use a GBM-style process calibrated either from historical daily drift and "
+                "volatility or from the latest model-implied return/risk overlay. Simulation outputs are scenario-oriented "
+                "and should not be interpreted as forecasts with certainty."
             ),
             "caveat_note": (
                 "The report is intended for analytical review and decision support. It does not constitute investment advice, "
