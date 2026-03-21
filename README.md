@@ -49,7 +49,24 @@ The project includes forward simulation logic so the workbench can produce scena
 ### 6. News sentiment layer
 Recent news coverage is ingested, stored, and scored. This adds directional context without overcomplicating the architecture.
 
-### 7. Multi-page PDF briefing
+### 7. Machine Learning Forecasting Layer
+The goal of this component is to enhance the platform’s decision-support capabilities by providing probabilistic estimates that feed into risk analysis and simulation workflows using information from both API's.
+
+The model uses structured historical market data and aggregated news sentiment features to estimate the following:
+
+- expected forward return over a fixed time period
+- probability of negative return over the same period
+- optional volatility or uncertainty
+
+The ML aspect uses the past steps to strengthen the project as a whole.
+
+- predictions are written to SQL tables alongside historical data
+- forecasts can be used to inform simulation inputs
+- results are incorporated into the PDF report as a “Model-Informed Forecast & Risk Outlook” section
+
+This design allows the model to function as a supporting signal within a broader risk and decision-support framework, rather than replacing traditional financial analysis.
+
+### 8. Multi-page PDF briefing
 The reporting layer generates a formal PDF-style asset briefing with:
 - summary
 - performance overview
