@@ -10,19 +10,24 @@ https://asset-intelligence-workbench-eq2zbxelprxwjnnxendyqp.streamlit.app/
 
 ## Database path
 
-The local development SQLite database lives at `data/processed/asset_intelligence.db` by default.
+The local development SQLite database lives at `data/app.db` by default.
 
 - Override it with `SQLITE_DB_PATH` when needed.
-- The app validates the resolved SQLite path on startup.
-- Startup now fails early if the parent directory is not writable, the database file cannot be created, or SQLite cannot open the file for writes.
+- The app resolves relative SQLite paths against the repository root, not the current working directory.
+- The app validates the resolved SQLite path on startup and logs the fully resolved absolute path.
+- Startup fails early if the parent directory is not writable, the database file cannot be created, or SQLite cannot open the file for writes.
 
 ### Resetting the local database safely
 
 1. Stop the Streamlit app or any Python process using the database.
-2. Delete `data/processed/asset_intelligence.db`.
+2. Delete `data/app.db`.
 3. Restart the app so the schema is recreated automatically.
 
-If you are deploying to a hosted environment with a read-only repo mount, set `SQLITE_DB_PATH` to a writable filesystem location for that environment before startup.
+Older local database files from the previous layout can also be deleted if you are no longer using them:
+
+- `data/processed/asset_intelligence.db`
+
+If you are deploying to a hosted environment with a read-only repo mount, choose a writable location explicitly with `SQLITE_DB_PATH` before startup.
 
 ## What the project does
 

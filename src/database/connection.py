@@ -164,6 +164,10 @@ def _enable_sqlite_foreign_keys(engine: Engine) -> None:
 def get_engine() -> Engine:
     """Create and return a SQLAlchemy engine for the configured backend."""
 
+    if config.is_sqlite:
+        # Ensure the resolved project-local database directory exists before SQLite opens the file.
+        config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+
     connect_args = {"check_same_thread": False} if config.is_sqlite else {}
     engine = create_engine(
         config.database_url,

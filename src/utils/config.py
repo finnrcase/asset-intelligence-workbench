@@ -21,7 +21,7 @@ from sqlalchemy.engine import make_url
 LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "processed" / "asset_intelligence.db"
+DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "app.db"
 
 
 class DatabaseConfigurationError(RuntimeError):
@@ -40,12 +40,21 @@ def _build_default_database_url(sqlite_path: Path) -> str:
     return f"sqlite:///{sqlite_path}"
 
 
+def _resolve_project_path(path_value: str | Path) -> Path:
+    """Resolve relative filesystem paths against the repository root."""
+
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path.resolve(strict=False)
+
+
 def _resolve_sqlite_path(database_url: str | None = None) -> Path:
     """Resolve the SQLite file path from env vars or the local default."""
 
     explicit_sqlite_path = os.getenv("SQLITE_DB_PATH")
     if explicit_sqlite_path:
-        return Path(explicit_sqlite_path).expanduser()
+        return _resolve_project_path(explicit_sqlite_path)
 
     if database_url and database_url.startswith("sqlite"):
         parsed_url = make_url(database_url)
@@ -53,9 +62,9 @@ def _resolve_sqlite_path(database_url: str | None = None) -> Path:
             raise DatabaseConfigurationError(
                 f"SQLite DATABASE_URL must point to a filesystem path. Resolved DATABASE_URL: {database_url}"
             )
-        return Path(parsed_url.database).expanduser()
+        return _resolve_project_path(parsed_url.database)
 
-    return DEFAULT_SQLITE_PATH
+    return DEFAULT_SQLITE_PATH.resolve(strict=False)
 
 
 def _ensure_directory_writable(directory: Path) -> None:
@@ -118,12 +127,18 @@ def validate_sqlite_runtime(sqlite_path: Path, database_url: str) -> None:
     resolved_path = sqlite_path.expanduser().resolve(strict=False)
     parent_directory = resolved_path.parent
 
+    _ensure_directory_writable(parent_directory)
+    _ensure_sqlite_file_writable(resolved_path)
+
+
+def get_resolved_sqlite_path(database_url: str | None = None) -> Path:
+    """Return and log the fully resolved SQLite path used by the application."""
+
+    resolved_path = _resolve_sqlite_path(database_url)
     if not logging.getLogger().handlers:
         logging.basicConfig(level=logging.INFO)
     LOGGER.info("Resolved SQLite database path: %s", resolved_path)
-
-    _ensure_directory_writable(parent_directory)
-    _ensure_sqlite_file_writable(resolved_path)
+    return resolved_path
 
 
 @dataclass(frozen=True)
@@ -161,8 +176,12 @@ def get_config() -> AppConfig:
     _load_environment()
 
     configured_database_url = os.getenv("DATABASE_URL")
-    sqlite_path = _resolve_sqlite_path(configured_database_url)
-    database_url = configured_database_url or _build_default_database_url(sqlite_path)
+    sqlite_path = get_resolved_sqlite_path(configured_database_url)
+    database_url = (
+        configured_database_url
+        if configured_database_url and not configured_database_url.startswith("sqlite")
+        else _build_default_database_url(sqlite_path)
+    )
     sqlalchemy_echo = os.getenv("SQLALCHEMY_ECHO", "false").strip().lower() == "true"
 
     config = AppConfig(
