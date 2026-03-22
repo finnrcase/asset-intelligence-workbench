@@ -229,7 +229,7 @@ def _render_status_message(status: dict[str, str] | None) -> None:
         return
 
     if status_type in {"database"}:
-        st.info(message)
+        st.success(message)
     elif status_type in {"ingested"}:
         st.success(message)
     elif status_type in {"rate_limited"}:
