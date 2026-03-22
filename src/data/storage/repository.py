@@ -17,9 +17,17 @@ from src.data.providers.market_data_provider import MarketDataPayload
 from src.database.connection import Asset
 from src.database.connection import DataSource
 from src.database.connection import HistoricalPrice
-from src.database.connection import IngestionRunLog
-from src.database.connection import MarketDataIngestionState
 from src.database.connection import session_scope
+
+try:
+    from src.database.connection import IngestionRunLog
+except ImportError:
+    IngestionRunLog = None
+
+try:
+    from src.database.connection import MarketDataIngestionState
+except ImportError:
+    MarketDataIngestionState = None
 from src.utils.config import get_config
 
 
@@ -49,12 +57,14 @@ class MarketDataRepository:
         with session_scope() as session:
             metadata = self._get_asset_metadata(session, normalized_ticker)
             price_rows = self._get_price_history(session, normalized_ticker)
-            state = session.scalar(
-                select(MarketDataIngestionState).where(
-                    MarketDataIngestionState.ticker == normalized_ticker,
-                    MarketDataIngestionState.provider_name == "yfinance",
+            state = None
+            if MarketDataIngestionState is not None:
+                state = session.scalar(
+                    select(MarketDataIngestionState).where(
+                        MarketDataIngestionState.ticker == normalized_ticker,
+                        MarketDataIngestionState.provider_name == "yfinance",
+                    )
                 )
-            )
             metadata_fetched_at = state.metadata_fetched_at if state else None
             prices_fetched_at = state.prices_fetched_at if state else None
             last_successful_fetch_at = state.last_successful_fetch_at if state else None
@@ -126,34 +136,36 @@ class MarketDataRepository:
         normalized_ticker = ticker.strip().upper()
         now = datetime.utcnow()
         with session_scope() as session:
-            state = session.scalar(
-                select(MarketDataIngestionState).where(
-                    MarketDataIngestionState.ticker == normalized_ticker,
-                    MarketDataIngestionState.provider_name == provider_name,
+            if MarketDataIngestionState is not None:
+                state = session.scalar(
+                    select(MarketDataIngestionState).where(
+                        MarketDataIngestionState.ticker == normalized_ticker,
+                        MarketDataIngestionState.provider_name == provider_name,
+                    )
                 )
-            )
-            if state is None:
-                state = MarketDataIngestionState(
-                    ticker=normalized_ticker,
-                    provider_name=provider_name,
-                )
-                session.add(state)
-            state.request_timestamp = now
-            state.fetch_status = fetch_status
-            state.error_message = error_message
-            state.updated_at = now
+                if state is None:
+                    state = MarketDataIngestionState(
+                        ticker=normalized_ticker,
+                        provider_name=provider_name,
+                    )
+                    session.add(state)
+                state.request_timestamp = now
+                state.fetch_status = fetch_status
+                state.error_message = error_message
+                state.updated_at = now
 
-            session.add(
-                IngestionRunLog(
-                    ticker=normalized_ticker,
-                    provider_name=provider_name,
-                    started_at=now,
-                    completed_at=now,
-                    fetch_status=fetch_status,
-                    error_message=error_message,
-                    cache_status=cache_status,
+            if IngestionRunLog is not None:
+                session.add(
+                    IngestionRunLog(
+                        ticker=normalized_ticker,
+                        provider_name=provider_name,
+                        started_at=now,
+                        completed_at=now,
+                        fetch_status=fetch_status,
+                        error_message=error_message,
+                        cache_status=cache_status,
+                    )
                 )
-            )
 
     def list_available_assets(self) -> list[dict[str, Any]]:
         with session_scope() as session:
@@ -313,6 +325,9 @@ class MarketDataRepository:
         fetch_status: str,
         error_message: str | None,
     ) -> None:
+        if MarketDataIngestionState is None:
+            return
+
         state = session.scalar(
             select(MarketDataIngestionState).where(
                 MarketDataIngestionState.ticker == payload.ticker,
@@ -347,6 +362,9 @@ class MarketDataRepository:
         error_message: str | None,
         records_written: int,
     ) -> None:
+        if IngestionRunLog is None:
+            return
+
         session.add(
             IngestionRunLog(
                 ticker=payload.ticker,
