@@ -13,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 import pandas as pd
+from sqlalchemy.exc import OperationalError
 from src.database.connection import initialize_database
 from src.database import queries as database_queries
 from src.database.connection import session_scope
