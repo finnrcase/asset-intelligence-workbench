@@ -687,6 +687,33 @@ def main() -> None:
             _format_number(snapshot.get("sentiment_score")),
         )
 
+        score_reason_rows = [
+            {
+                "Field": "Composite ML Score",
+                "Reason": snapshot.get("composite_ml_score_reason"),
+            },
+            {
+                "Field": "Confidence",
+                "Reason": snapshot.get("confidence_score_reason"),
+            },
+            {
+                "Field": "History Score",
+                "Reason": snapshot.get("history_score_reason"),
+            },
+            {
+                "Field": "Risk Score",
+                "Reason": snapshot.get("risk_score_reason"),
+            },
+            {
+                "Field": "Sentiment Score",
+                "Reason": snapshot.get("sentiment_score_reason"),
+            },
+        ]
+        score_reason_rows = [row for row in score_reason_rows if row["Reason"]]
+        if score_reason_rows:
+            st.caption("ML coverage notes")
+            st.dataframe(score_reason_rows, use_container_width=True, hide_index=True)
+
         model_detail_rows = [
             {
                 "Target": target_definition.get("name", "forward_return_20d"),
@@ -764,6 +791,14 @@ def main() -> None:
         limit=25,
     )
     sentiment_summary = app_data.get_sentiment_summary(sentiment_rows)
+
+    sentiment_provider_note = (
+        sentiment_status.get("message")
+        if sentiment_status and sentiment_status.get("status") in {"sentiment_unavailable", "database_stale", "credentials_error", "provider_error"}
+        else None
+    )
+    if sentiment_provider_note:
+        st.info(sentiment_provider_note)
 
     if sentiment_summary["article_count"] == 0:
         if sentiment_status and not sentiment_status.get("success"):

@@ -141,6 +141,18 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(history[0]["source_name"], "unit_test_feed")
         self.assertEqual(history[0]["close_price"], Decimal("249.750000"))
 
+    def test_get_sentiment_source_frame_returns_empty_when_news_table_is_missing(self) -> None:
+        """Sentiment-source queries should degrade cleanly on older DBs without news tables."""
+
+        with self.connection_module.session_scope() as session:
+            session.execute(self.queries_module.text("DROP TABLE news_articles"))
+
+        with self.connection_module.session_scope() as session:
+            frame = self.queries_module.get_sentiment_source_frame(session, ticker="AAPL")
+
+        self.assertTrue(frame.empty)
+        self.assertIn("source_name", frame.columns)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@ Prediction workflow for the machine learning signal-calibration layer.
 from __future__ import annotations
 
 from datetime import date, datetime
+import logging
 from typing import Any
 
 import pandas as pd
@@ -21,6 +22,9 @@ from src.ml.score import compute_composite_ml_score
 from src.ml.score import compute_confidence_score
 from src.ml.train import prepare_model_frame
 from src.ml.targets import TARGET_NAME
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 
@@ -78,6 +82,17 @@ def generate_predictions(
         comparison_predicted_return = float(comparison_model.predict(row_frame[feature_columns])[0])
         probability_positive = float(classification_model.predict_proba(row_frame[feature_columns])[:, 1][0])
         downside_probability = 1.0 - probability_positive
+        missing_features = [
+            column_name
+            for column_name in feature_columns
+            if pd.isna(row_frame.iloc[0][column_name])
+        ]
+        LOGGER.info(
+            "ML scorer feature coverage for %s: generated=%s missing=%s",
+            row["ticker"],
+            len(feature_columns) - len(missing_features),
+            missing_features,
+        )
         feature_contributions = compute_linear_feature_contributions(
             linear_model,
             row_frame,
@@ -131,6 +146,15 @@ def generate_predictions(
                 "top_features_json": serialize_rows(feature_contributions, top_n=8),
                 "prediction_generated_at": datetime.utcnow(),
             }
+        )
+        LOGGER.info(
+            "ML scorer returned for %s: fields=%s composite=%s history=%s risk=%s sentiment=%s",
+            row["ticker"],
+            list(result_rows[-1].keys()),
+            result_rows[-1]["composite_ml_score"],
+            result_rows[-1]["history_score"],
+            result_rows[-1]["risk_score"],
+            result_rows[-1]["sentiment_score"],
         )
 
     return pd.DataFrame(result_rows)

@@ -5,6 +5,7 @@ Model training workflow for the machine learning signal-calibration layer.
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from typing import Any
 
 import pandas as pd
@@ -28,6 +29,9 @@ from src.ml.targets import TARGET_COLUMN
 from src.ml.targets import TARGET_HORIZON_DAYS
 from src.ml.targets import TARGET_NAME
 from src.ml.targets import TARGET_SUMMARY
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 DEFAULT_EXCLUDED_COLUMNS = {
@@ -192,6 +196,15 @@ def train_forecasting_models(
         raise ValueError("Insufficient forward-return target history for time-aware regression training.")
     if classification_train.empty or classification_test.empty:
         raise ValueError("Insufficient forward-direction target history for time-aware classification training.")
+
+    LOGGER.info(
+        "ML training frame prepared: rows=%s features=%s history=%s risk=%s sentiment=%s",
+        len(prepared_frame),
+        len(selected_features),
+        feature_groups.get("history", []),
+        feature_groups.get("risk", []),
+        feature_groups.get("sentiment", []),
+    )
 
     holdout_metrics = {
         "regression": _evaluate_regression_models(

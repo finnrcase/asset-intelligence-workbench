@@ -11,6 +11,7 @@ import pandas as pd
 from sqlalchemy import Select
 from sqlalchemy import select
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from src.database.connection import Asset
@@ -236,7 +237,21 @@ def get_sentiment_source_frame(
         params["end_date"] = end_date.isoformat()
     statement += " ORDER BY a.ticker, na.published_at"
 
-    rows = session.execute(text(statement), params).mappings().all()
+    try:
+        rows = session.execute(text(statement), params).mappings().all()
+    except OperationalError as exc:
+        if "no such table: news_articles" in str(exc).lower():
+            return pd.DataFrame(
+                columns=[
+                    "asset_id",
+                    "ticker",
+                    "published_at",
+                    "sentiment_score",
+                    "sentiment_label",
+                    "source_name",
+                ]
+            )
+        raise
     return pd.DataFrame(rows)
 
 

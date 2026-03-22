@@ -991,3 +991,523 @@ def build_ml_forecast_summary(ticker: str) -> dict[str, Any]:
         "training_window": training_window,
         "interpretation": " ".join(interpretation_parts),
     }
+
+
+def _gnews_api_key_configured() -> bool:
+    """Return True when the GNews sentiment provider is configured."""
+
+    import os
+
+    return bool(str(os.getenv("GNEWS_API_KEY", "")).strip())
+
+
+
+def _is_missing_gnews_configuration(detail: str) -> bool:
+    normalized = detail.lower()
+    return "gnews_api_key" in normalized and "required" in normalized
+
+
+
+def _build_sentiment_unavailable_status(
+    ticker: str,
+    message: str,
+    article_count: int = 0,
+    status: str = "sentiment_unavailable",
+    success: bool = False,
+) -> dict[str, Any]:
+    return {
+        "success": success,
+        "ticker": ticker,
+        "status": status,
+        "message": message,
+        "fetched": False,
+        "article_count": article_count,
+        "sentiment_unavailable_reason": "GNEWS_API_KEY not configured",
+    }
+
+
+
+def _ml_snapshot_is_complete(snapshot: dict[str, Any] | None) -> bool:
+    if not snapshot:
+        return False
+    required_fields = [
+        "composite_ml_score",
+        "confidence_score",
+        "history_score",
+        "risk_score",
+        "sentiment_score",
+        "directional_signal",
+    ]
+    return all(snapshot.get(field_name) is not None for field_name in required_fields)
+
+
+
+def ensure_sentiment_for_ticker(
+    ticker: str,
+    page_size: int = DEFAULT_SENTIMENT_PAGE_SIZE,
+    freshness_hours: int = DEFAULT_SENTIMENT_FRESHNESS_HOURS,
+) -> dict[str, Any]:
+    """Ensure recent sentiment exists for a ticker with graceful provider fallback."""
+
+    import logging
+
+    logger = logging.getLogger(__name__)
+    normalized_ticker = normalize_app_ticker(ticker)
+    if not normalized_ticker:
+        return {
+            "success": False,
+            "ticker": "",
+            "status": "invalid_input",
+            "message": "A valid ticker is required before sentiment can be loaded.",
+            "fetched": False,
+        }
+
+    stored_rows = load_recent_news_articles(normalized_ticker, limit=page_size)
+    if stored_rows and sentiment_is_fresh(stored_rows, freshness_hours=freshness_hours):
+        return {
+            "success": True,
+            "ticker": normalized_ticker,
+            "status": "database",
+            "message": f"{normalized_ticker} sentiment was loaded from the local database.",
+            "fetched": False,
+            "article_count": len(stored_rows),
+        }
+
+    if not _gnews_api_key_configured():
+        if stored_rows:
+            return _build_sentiment_unavailable_status(
+                ticker=normalized_ticker,
+                article_count=len(stored_rows),
+                status="database_stale",
+                success=True,
+                message=(
+                    f"Live sentiment refresh is unavailable for {normalized_ticker} because the GNews provider is not configured. "
+                    "The app will continue using cached sentiment and neutral sentiment fallback where fresh coverage is unavailable."
+                ),
+            )
+        return _build_sentiment_unavailable_status(
+            ticker=normalized_ticker,
+            article_count=0,
+            status="sentiment_unavailable",
+            success=False,
+            message=(
+                f"Live sentiment coverage is unavailable for {normalized_ticker} because the GNews provider is not configured. "
+                "The rest of the app will continue using market/risk data and neutral sentiment fallback for ML scoring."
+            ),
+        )
+
+    try:
+        from src.ingestion.bootstrap_sentiment import ingest_sentiment_for_ticker
+    except Exception as exc:
+        detail = str(exc)
+        if "401" in detail or "invalid api key" in detail.lower() or "unauthorized" in detail.lower():
+            return {
+                "success": False,
+                "ticker": normalized_ticker,
+                "status": "credentials_error",
+                "message": (
+                    f"Stored sentiment is unavailable for {normalized_ticker}, and the configured news provider credentials were rejected. "
+                    "Market, risk, and ML outputs can still run without live sentiment refresh."
+                ),
+                "fetched": False,
+            }
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "ingestion_import_error",
+            "message": f"Sentiment ingestion components could not be loaded. Detail: {exc}",
+            "fetched": False,
+        }
+
+    initialize_database()
+
+    try:
+        summary = ingest_sentiment_for_ticker(
+            ticker=normalized_ticker,
+            page_size=page_size,
+        )
+    except Exception as exc:
+        detail = str(exc)
+        if _is_missing_gnews_configuration(detail):
+            logger.info("Sentiment provider unavailable for %s: %s", normalized_ticker, detail)
+            if stored_rows:
+                return _build_sentiment_unavailable_status(
+                    ticker=normalized_ticker,
+                    article_count=len(stored_rows),
+                    status="database_stale",
+                    success=True,
+                    message=(
+                        f"Live sentiment refresh is unavailable for {normalized_ticker} because the GNews provider is not configured. "
+                        "Cached sentiment will be used where available, with neutral fallback otherwise."
+                    ),
+                )
+            return _build_sentiment_unavailable_status(
+                ticker=normalized_ticker,
+                article_count=0,
+                status="sentiment_unavailable",
+                success=False,
+                message=(
+                    f"Live sentiment coverage is unavailable for {normalized_ticker} because the GNews provider is not configured. "
+                    "The ticker is still valid and the rest of the analytics stack will continue to function."
+                ),
+            )
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "provider_error",
+            "message": (
+                f"Unable to refresh live sentiment for {normalized_ticker}. "
+                f"Provider detail: {exc}"
+            ),
+            "fetched": False,
+        }
+
+    if summary.get("articles_loaded", 0) <= 0:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "no_data",
+            "message": f"No recent sentiment articles were returned for {normalized_ticker}.",
+            "fetched": True,
+        }
+
+    return {
+        "success": True,
+        "ticker": normalized_ticker,
+        "status": "ingested",
+        "message": (
+            f"{normalized_ticker} sentiment was fetched and stored locally "
+            f"({summary['articles_loaded']} articles)."
+        ),
+        "fetched": True,
+        "article_count": summary["articles_loaded"],
+    }
+
+
+
+def ensure_ml_forecast_for_ticker(ticker: str) -> dict[str, Any]:
+    """Build and store a model-informed forecast on demand when one is missing or stale."""
+
+    import importlib
+    import logging
+
+    logger = logging.getLogger(__name__)
+    normalized_ticker = normalize_app_ticker(ticker)
+    if not normalized_ticker:
+        return {
+            "success": False,
+            "ticker": "",
+            "status": "invalid_input",
+            "message": "A valid ticker is required before an ML forecast can be built.",
+        }
+
+    existing_snapshot = load_latest_ml_forecast(normalized_ticker)
+    if existing_snapshot is not None and _ml_snapshot_is_complete(existing_snapshot):
+        return {
+            "success": True,
+            "ticker": normalized_ticker,
+            "status": "database",
+            "message": f"{normalized_ticker} model-informed forecast was loaded from the local database.",
+        }
+    if existing_snapshot is not None:
+        logger.info(
+            "ML snapshot for %s is incomplete and will be rebuilt. Available fields=%s",
+            normalized_ticker,
+            sorted(existing_snapshot.keys()),
+        )
+
+    try:
+        from src.database import loaders as loaders_module
+        from src.database import queries as queries_module
+        from src.features import feature_store as feature_store_module
+        from src.ml import predict as predict_module
+        from src.ml import train as train_module
+
+        loaders_module = importlib.reload(loaders_module)
+        queries_module = importlib.reload(queries_module)
+        feature_store_module = importlib.reload(feature_store_module)
+        train_module = importlib.reload(train_module)
+        predict_module = importlib.reload(predict_module)
+
+        load_ml_model_run = getattr(loaders_module, "load_ml_model_run", None)
+        refresh_feature_store = getattr(feature_store_module, "refresh_feature_store")
+        train_models_from_feature_store = getattr(train_module, "train_models_from_feature_store")
+        predict_from_feature_store = getattr(predict_module, "predict_from_feature_store")
+        get_ml_training_frame = getattr(queries_module, "get_ml_training_frame")
+    except Exception as exc:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "ml_import_error",
+            "message": f"ML forecasting components could not be loaded. Detail: {exc}",
+        }
+
+    try:
+        with session_scope() as session:
+            refresh_feature_store(session=session, ticker=normalized_ticker)
+            training_frame = get_ml_training_frame(session=session, ticker=normalized_ticker)
+            logger.info(
+                "ML feature source for %s: rows=%s columns=%s",
+                normalized_ticker,
+                len(training_frame),
+                list(training_frame.columns),
+            )
+
+            training_error: Exception | None = None
+            training_result = None
+            for training_scope in (None, normalized_ticker):
+                try:
+                    training_result = train_models_from_feature_store(
+                        session=session,
+                        ticker=training_scope,
+                    )
+                    break
+                except Exception as exc:
+                    training_error = exc
+
+            if training_result is None:
+                raise ValueError(
+                    "Unable to train a model-informed forecast from the currently stored feature history."
+                ) from training_error
+
+            expected_feature_columns = training_result["feature_columns"]
+            available_feature_columns = set(training_frame.columns)
+            missing_feature_columns = [
+                column_name for column_name in expected_feature_columns if column_name not in available_feature_columns
+            ]
+            logger.info(
+                "ML training contract for %s: expected_features=%s missing_features=%s",
+                normalized_ticker,
+                expected_feature_columns,
+                missing_feature_columns,
+            )
+
+            run_id = f"app_ml_run_{uuid4().hex}"
+            if callable(load_ml_model_run):
+                load_ml_model_run(
+                    session=session,
+                    run_record={
+                        "run_id": run_id,
+                        "run_timestamp": pd.Timestamp.utcnow().to_pydatetime(),
+                        "regression_model_name": training_result["selected_models"]["regression"],
+                        "classification_model_name": training_result["selected_models"]["classification"],
+                        "training_start_date": str(training_result["training_frame_dates"]["start_date"]),
+                        "training_end_date": str(training_result["training_frame_dates"]["end_date"]),
+                        "evaluation_summary": training_result["evaluation"],
+                        "feature_version": "v1",
+                        "notes": f"On-demand app forecast build for {normalized_ticker}",
+                    },
+                )
+
+            prediction_frame = predict_from_feature_store(
+                session=session,
+                training_result=training_result,
+                ticker=normalized_ticker,
+                model_run_id=run_id,
+                write_to_sql=True,
+            )
+            logger.info(
+                "ML scorer output for %s: columns=%s rows=%s preview=%s",
+                normalized_ticker,
+                list(prediction_frame.columns),
+                len(prediction_frame),
+                prediction_frame.head(1).to_dict(orient="records") if not prediction_frame.empty else [],
+            )
+    except Exception as exc:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "ml_build_error",
+            "message": (
+                f"Unable to build a model-informed forecast for {normalized_ticker} from the current "
+                f"local data. Detail: {exc}"
+            ),
+        }
+
+    if prediction_frame.empty:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "ml_no_prediction",
+            "message": f"The forecast pipeline completed without producing a stored prediction for {normalized_ticker}.",
+        }
+
+    return {
+        "success": True,
+        "ticker": normalized_ticker,
+        "status": "generated",
+        "message": f"{normalized_ticker} model-informed forecast was generated from the local feature store.",
+    }
+
+
+
+def build_ml_forecast_summary(ticker: str) -> dict[str, Any]:
+    """Build an app/report-friendly ML signal summary for one asset."""
+
+    snapshot = load_latest_ml_forecast(ticker)
+    build_status = None
+    stale_snapshot_detected = snapshot is not None and not _ml_snapshot_is_complete(snapshot)
+    if snapshot is None or stale_snapshot_detected:
+        build_status = ensure_ml_forecast_for_ticker(ticker)
+        if build_status.get("success"):
+            snapshot = load_latest_ml_forecast(ticker)
+
+    prediction_history = prepare_ml_prediction_history_frame(load_ml_prediction_history(ticker))
+
+    if snapshot is None:
+        return {
+            "available": False,
+            "snapshot": None,
+            "prediction_history": prediction_history,
+            "feature_drivers": [],
+            "feature_importance": [],
+            "pillar_weights": [],
+            "pillar_contributions": [],
+            "build_status": build_status,
+            "target_definition": None,
+            "interpretation": (
+                build_status["message"]
+                if build_status and build_status.get("message")
+                else "No stored machine-learning signal is currently available for this asset."
+            ),
+        }
+
+    expected_return = _safe_float(snapshot.get("predicted_return_20d"))
+    downside_probability = _safe_float(snapshot.get("downside_probability_20d"))
+    probability_positive = _safe_float(snapshot.get("probability_positive_20d"))
+    confidence_score = _safe_float(snapshot.get("confidence_score"))
+    composite_ml_score = _safe_float(snapshot.get("composite_ml_score"))
+    history_score = _safe_float(snapshot.get("history_score"))
+    risk_score = _safe_float(snapshot.get("risk_score"))
+    sentiment_score = _safe_float(snapshot.get("sentiment_score"))
+    article_count_7d = _safe_float(snapshot.get("article_count_7d"))
+    source_count_7d = _safe_float(snapshot.get("source_count_7d"))
+
+    history_score_reason = None if history_score is not None else "history pillar was not returned in the stored ML snapshot"
+    risk_score_reason = None if risk_score is not None else "risk pillar was not returned in the stored ML snapshot"
+    sentiment_score_reason = None
+    if sentiment_score is None:
+        sentiment_score_reason = "sentiment pillar was not returned in the stored ML snapshot"
+    elif (article_count_7d in (None, 0.0)) and (source_count_7d in (None, 0.0)):
+        sentiment_score_reason = "sentiment provider unavailable or no cached sentiment; neutral fallback was used"
+
+    composite_ml_score_reason = None if composite_ml_score is not None else "composite score unavailable because the scorer output was incomplete"
+    confidence_score_reason = None if confidence_score is not None else "confidence unavailable because the scorer output was incomplete"
+
+    pillar_weights = snapshot.get("pillar_weights_json") or []
+    feature_importance = snapshot.get("feature_importance_json") or []
+    top_features = snapshot.get("top_features_json") or []
+    pillar_contributions = [
+        {"pillar": "History", "contribution": _safe_float(snapshot.get("history_contribution")) or 0.0},
+        {"pillar": "Risk", "contribution": _safe_float(snapshot.get("risk_contribution")) or 0.0},
+        {"pillar": "Sentiment", "contribution": _safe_float(snapshot.get("sentiment_contribution")) or 0.0},
+    ]
+    directional_signal = snapshot.get("directional_signal") or "Neutral"
+    target_definition = {
+        "name": snapshot.get("target_name") or "forward_return_20d",
+        "horizon_days": int(snapshot.get("prediction_horizon_days") or 20),
+        "summary": (
+            "The decision-support model targets forward 20-trading-day return rather than price level, "
+            "because return is more stable across assets and better aligned with research workflows."
+        ),
+    }
+    model_name = snapshot.get("selected_model_name") or snapshot.get("regression_model_name") or "ridge_regression"
+
+    snapshot = {
+        **snapshot,
+        "model_name": model_name,
+        "expected_return_20d": expected_return,
+        "probability_positive": probability_positive,
+        "predicted_return_20d": expected_return,
+        "downside_probability_20d": downside_probability,
+        "probability_positive_20d": probability_positive,
+        "confidence_score": confidence_score,
+        "confidence": confidence_score,
+        "confidence_score_reason": confidence_score_reason,
+        "composite_ml_score": composite_ml_score,
+        "composite_ml_score_reason": composite_ml_score_reason,
+        "history_score": history_score,
+        "risk_score": risk_score,
+        "sentiment_score": sentiment_score,
+        "history_score_reason": history_score_reason,
+        "risk_score_reason": risk_score_reason,
+        "sentiment_score_reason": sentiment_score_reason,
+        "directional_signal": directional_signal,
+        "regime_label": directional_signal,
+        "top_features": top_features,
+        "pillar_contributions": pillar_contributions,
+    }
+
+    partial_inputs = [
+        reason
+        for reason in (history_score_reason, risk_score_reason, sentiment_score_reason)
+        if reason
+    ]
+    interpretation_parts = [
+        (
+            f"The machine learning calibration layer assigns {ticker.upper()} a composite score of {composite_ml_score:.1f} "
+            f"with a {directional_signal.lower()} signal."
+        )
+        if composite_ml_score is not None
+        else f"A machine learning signal is available for {ticker.upper()}, but the composite score is unavailable.",
+        (
+            f"The current model-implied 20-day return is {expected_return:.2%}, while the probability of a positive "
+            f"20-day return is {probability_positive:.2%}."
+        )
+        if expected_return is not None and probability_positive is not None
+        else "Forward return and directional probability estimates are only partially available.",
+        (
+            f"Pillar context currently reads history {history_score:.2f}, risk {risk_score:.2f}, and sentiment {sentiment_score:.2f}."
+        )
+        if history_score is not None and risk_score is not None and sentiment_score is not None
+        else "One or more pillar-level scores are unavailable; see the pillar notes for explicit reasons.",
+        (
+            f"Confidence is {confidence_score:.0%}, which reflects signal strength and agreement between the linear weighting engine "
+            "and the nonlinear challenger model."
+        )
+        if confidence_score is not None
+        else "Confidence context is unavailable because the stored scorer output was incomplete.",
+    ]
+    if downside_probability is not None:
+        interpretation_parts.append(
+            f"The probability of a negative 20-day return is {downside_probability:.2%}, which frames the downside context as {_classify_downside_context(downside_probability).lower()}."
+        )
+    if partial_inputs:
+        interpretation_parts.append("Partial-input note: " + "; ".join(partial_inputs) + ".")
+
+    return {
+        "available": True,
+        "build_status": build_status,
+        "snapshot": snapshot,
+        "model_name": model_name,
+        "target_definition": target_definition,
+        "expected_return_20d": expected_return,
+        "probability_positive": probability_positive,
+        "composite_ml_score": composite_ml_score,
+        "directional_signal": directional_signal,
+        "confidence": confidence_score,
+        "history_score": history_score,
+        "risk_score": risk_score,
+        "sentiment_score": sentiment_score,
+        "history_score_reason": history_score_reason,
+        "risk_score_reason": risk_score_reason,
+        "sentiment_score_reason": sentiment_score_reason,
+        "prediction_history": prediction_history,
+        "feature_drivers": top_features,
+        "feature_importance": feature_importance,
+        "pillar_weights": pillar_weights,
+        "pillar_contributions": pillar_contributions,
+        "top_features": top_features,
+        "partial_inputs": partial_inputs,
+        "training_window": {
+            "start_date": snapshot.get("run_timestamp") or snapshot.get("as_of_date"),
+            "end_date": snapshot.get("as_of_date"),
+            "feature_version": snapshot.get("feature_version") or "v1",
+        },
+        "model_summary": {
+            "selected_model_name": model_name,
+            "classification_model_name": snapshot.get("classification_model_name"),
+            "model_family": snapshot.get("model_family") or "machine_learning_signal_calibration",
+        },
+        "interpretation": " ".join(interpretation_parts),
+    }

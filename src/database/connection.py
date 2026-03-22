@@ -39,6 +39,8 @@ from src.utils.config import get_config
 
 
 DATABASE_CONFIG = get_config()
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_SCHEMA_PATH = PROJECT_ROOT / "sql" / "schema.sql"
 
 
 class Base(DeclarativeBase):
@@ -303,8 +305,12 @@ def initialize_database(schema_path: Path | None = None) -> None:
     if DATABASE_CONFIG.is_sqlite:
         DATABASE_CONFIG.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if schema_path is not None:
-        sql_text = schema_path.read_text(encoding="utf-8")
+    resolved_schema_path = schema_path
+    if resolved_schema_path is None and DEFAULT_SCHEMA_PATH.exists():
+        resolved_schema_path = DEFAULT_SCHEMA_PATH
+
+    if resolved_schema_path is not None:
+        sql_text = resolved_schema_path.read_text(encoding="utf-8")
         with ENGINE.begin() as connection:
             for statement in [chunk.strip() for chunk in sql_text.split(";") if chunk.strip()]:
                 connection.exec_driver_sql(statement)
