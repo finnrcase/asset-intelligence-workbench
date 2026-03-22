@@ -466,35 +466,51 @@ def main() -> None:
             st.rerun()
 
     if generate_report_clicked:
-        with st.spinner("Generating asset briefing report..."):
-            try:
-                pdf_report_module, pdf_report_error = _load_pdf_report_module()
-                if pdf_report_module is None:
-                    raise RuntimeError(pdf_report_error)
+        report_status_indicator = st.status(
+            f"Generating report for {st.session_state.active_ticker}...",
+            expanded=True,
+        )
+        report_status_indicator.write("Loading the PDF report module.")
 
-                report_path = pdf_report_module.generate_asset_pdf_report(
-                    ticker=st.session_state.active_ticker,
-                    forecast_horizon=forecast_horizon,
-                    simulation_count=simulation_count,
-                )
-                st.session_state.report_status = {
-                    "success": True,
-                    "path": report_path,
-                }
-                # Store the exact path returned by the generator and reuse only this file
-                # for the success message, browser download, and local open actions.
-                resolved_report_path = Path(report_path).resolve()
-                st.session_state.latest_report_path = str(resolved_report_path)
-                st.session_state.latest_report_name = resolved_report_path.name
-                st.session_state.open_report_status = None
-            except Exception as exc:
-                st.session_state.report_status = {
-                    "success": False,
-                    "message": str(exc),
-                }
-                st.session_state.latest_report_path = None
-                st.session_state.latest_report_name = None
-                st.session_state.open_report_status = None
+        try:
+            pdf_report_module, pdf_report_error = _load_pdf_report_module()
+            if pdf_report_module is None:
+                raise RuntimeError(pdf_report_error)
+
+            report_status_indicator.write("Running analytics and composing the PDF report.")
+            report_path = pdf_report_module.generate_asset_pdf_report(
+                ticker=st.session_state.active_ticker,
+                forecast_horizon=forecast_horizon,
+                simulation_count=simulation_count,
+            )
+            st.session_state.report_status = {
+                "success": True,
+                "path": report_path,
+            }
+            # Store the exact path returned by the generator and reuse only this file
+            # for the success message, browser download, and local open actions.
+            resolved_report_path = Path(report_path).resolve()
+            st.session_state.latest_report_path = str(resolved_report_path)
+            st.session_state.latest_report_name = resolved_report_path.name
+            st.session_state.open_report_status = None
+            report_status_indicator.update(
+                label=f"Report ready for {st.session_state.active_ticker}.",
+                state="complete",
+                expanded=False,
+            )
+        except Exception as exc:
+            st.session_state.report_status = {
+                "success": False,
+                "message": str(exc),
+            }
+            st.session_state.latest_report_path = None
+            st.session_state.latest_report_name = None
+            st.session_state.open_report_status = None
+            report_status_indicator.update(
+                label=f"Report generation failed for {st.session_state.active_ticker}.",
+                state="error",
+                expanded=True,
+            )
 
     if st.session_state.report_status:
         if st.session_state.report_status.get("success"):
@@ -614,55 +630,131 @@ def main() -> None:
     st.dataframe(recent_prices, use_container_width=True, hide_index=True)
 
     st.divider()
-    st.subheader("Model-Informed Forecast")
+    st.subheader("Machine Learning Signal Calibration")
     st.caption(
-        "This section frames the machine-learning layer as a probabilistic return and downside-risk "
-        "overlay for decision support, not as a direct price predictor."
+        "This layer combines historical market structure, downside/risk context, and sentiment into a "
+        "composite decision-support score. It is framed as a weighting engine for research, not a guaranteed forecast."
     )
 
     if not ml_summary["available"]:
         st.info(ml_summary["interpretation"])
     else:
-        _render_ml_forecast_metrics(ml_summary)
+        snapshot = ml_summary["snapshot"]
+        target_definition = ml_summary.get("target_definition") or {}
+        model_summary = ml_summary.get("model_summary") or {}
+        training_window = ml_summary.get("training_window") or {}
+
+        st.markdown("**Target Definition**")
+        st.info(target_definition.get("summary", "The current ML target definition is unavailable."))
+
+        overview_columns = st.columns(4)
+        overview_columns[0].metric(
+            "Composite ML Score",
+            _format_number(snapshot.get("composite_ml_score")),
+        )
+        overview_columns[1].metric(
+            "Directional Signal",
+            snapshot.get("directional_signal") or snapshot.get("regime_label") or "N/A",
+        )
+        overview_columns[2].metric(
+            "Confidence",
+            _format_percent(snapshot.get("confidence_score")),
+        )
+        overview_columns[3].metric(
+            "Selected Model",
+            model_summary.get("selected_model_name") or snapshot.get("selected_model_name") or "N/A",
+        )
+
+        secondary_columns = st.columns(5)
+        secondary_columns[0].metric(
+            "Expected 20-Day Return",
+            _format_percent(snapshot.get("predicted_return_20d")),
+        )
+        secondary_columns[1].metric(
+            "Probability Positive",
+            _format_percent(snapshot.get("probability_positive_20d")),
+        )
+        secondary_columns[2].metric(
+            "History Score",
+            _format_number(snapshot.get("history_score")),
+        )
+        secondary_columns[3].metric(
+            "Risk Score",
+            _format_number(snapshot.get("risk_score")),
+        )
+        secondary_columns[4].metric(
+            "Sentiment Score",
+            _format_number(snapshot.get("sentiment_score")),
+        )
+
+        model_detail_rows = [
+            {
+                "Target": target_definition.get("name", "forward_return_20d"),
+                "Horizon": f"{int(target_definition.get('horizon_days') or 20)} trading days",
+                "Linear Weighting Engine": model_summary.get("selected_model_name") or snapshot.get("selected_model_name") or "ridge_regression",
+                "Nonlinear Challenger": snapshot.get("regression_model_name") or "random_forest_regressor",
+                "Direction Classifier": model_summary.get("classification_model_name") or snapshot.get("classification_model_name") or "random_forest_classifier",
+                "Feature Version": training_window.get("feature_version") or snapshot.get("feature_version") or "v1",
+                "As Of": str(snapshot.get("as_of_date") or "N/A"),
+            }
+        ]
+        st.dataframe(model_detail_rows, use_container_width=True, hide_index=True)
+
         ml_chart_left, ml_chart_right = st.columns(2)
         prediction_history = ml_summary["prediction_history"]
-        if not prediction_history.empty and prediction_history.shape[0] >= 2:
-            with ml_chart_left:
+        with ml_chart_left:
+            if not prediction_history.empty and prediction_history.shape[0] >= 2:
                 st.plotly_chart(
-                    charts.create_prediction_history_chart(prediction_history),
+                    charts.create_ml_score_history_chart(prediction_history),
                     use_container_width=True,
                 )
-        else:
-            with ml_chart_left:
+            else:
                 _render_latest_ml_snapshot(ml_summary)
 
-        feature_drivers = ml_summary["feature_drivers"]
-        if feature_drivers:
-            with ml_chart_right:
-                st.plotly_chart(
-                    charts.create_feature_driver_chart(feature_drivers),
-                    use_container_width=True,
-                )
-        else:
-            with ml_chart_right:
-                st.info("Feature driver context is not available for the current forecast snapshot.")
+        with ml_chart_right:
+            st.plotly_chart(
+                charts.create_pillar_contribution_chart(ml_summary.get("pillar_contributions") or []),
+                use_container_width=True,
+            )
 
-        st.markdown("**Forecast Interpretation**")
+        st.markdown("**Interpretation**")
         st.info(ml_summary["interpretation"])
 
-        if feature_drivers:
-            st.markdown("**Current Forecast Drivers**")
-            driver_rows = [
-                {
-                    "Driver": driver["label"].title(),
-                    "Current Value": _format_number(driver["current_value"]),
-                    "Recent Mean": _format_number(driver["historical_mean"]),
-                    "Deviation vs History": f"{driver['z_score']:+.2f} sigma",
-                    "Context": driver["direction"].title(),
-                }
-                for driver in feature_drivers
-            ]
-            st.dataframe(driver_rows, use_container_width=True, hide_index=True)
+        feature_importance = ml_summary.get("feature_importance") or []
+        if feature_importance:
+            feature_chart_left, feature_chart_right = st.columns(2)
+            with feature_chart_left:
+                st.plotly_chart(
+                    charts.create_feature_importance_chart(feature_importance[:8]),
+                    use_container_width=True,
+                )
+            with feature_chart_right:
+                st.dataframe(
+                    [
+                        {
+                            "Feature": str(row.get("feature", "")).replace("_", " ").title(),
+                            "Importance": _format_number(float(row.get("importance", 0.0))),
+                        }
+                        for row in feature_importance[:8]
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        pillar_weight_rows = ml_summary.get("pillar_weights") or []
+        if pillar_weight_rows:
+            st.markdown("**Learned Pillar Weights**")
+            st.dataframe(
+                [
+                    {
+                        "Pillar": str(row.get("pillar", "")).title(),
+                        "Weight": _format_percent(float(row.get("weight", 0.0))),
+                    }
+                    for row in pillar_weight_rows
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
 
     st.divider()
     st.subheader("News Sentiment")

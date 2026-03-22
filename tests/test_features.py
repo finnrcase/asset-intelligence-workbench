@@ -47,6 +47,7 @@ class FeatureEngineeringTests(unittest.TestCase):
                 ),
                 "sentiment_score": [0.4, -0.2, 0.1, -0.5],
                 "sentiment_label": ["positive", "negative", "neutral", "negative"],
+                "source_name": ["wire", "wire", "blog", "terminal"],
             }
         )
 
@@ -83,6 +84,10 @@ class FeatureEngineeringTests(unittest.TestCase):
         self.assertEqual(jan_5["article_count_1d"], 2)
         self.assertAlmostEqual(jan_5["sentiment_mean_1d"], 0.1, places=10)
         self.assertAlmostEqual(jan_5["negative_article_share_7d"], 0.5, places=10)
+        self.assertEqual(jan_5["source_count_7d"], 1)
+        jan_8 = features.loc[features["feature_date"] == pd.Timestamp("2025-01-08").date()].iloc[0]
+        self.assertGreaterEqual(jan_8["source_count_7d"], 1)
+        self.assertTrue(pd.notna(jan_8["source_sentiment_dispersion_7d"]) or pd.isna(jan_8["source_sentiment_dispersion_7d"]))
 
 
 if __name__ == "__main__":

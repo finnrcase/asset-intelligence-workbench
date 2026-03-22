@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS sentiment_features (
     negative_article_share_7d NUMERIC(18, 8),
     positive_article_share_7d NUMERIC(18, 8),
     article_count_7d INTEGER,
+    source_count_7d INTEGER,
+    source_sentiment_dispersion_7d NUMERIC(18, 8),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE,
     CONSTRAINT uq_sentiment_features_asset_date UNIQUE (asset_id, feature_date)

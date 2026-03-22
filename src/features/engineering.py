@@ -12,6 +12,7 @@ FEATURE_VERSION = "v1"
 TRADING_DAYS_PER_YEAR = 252
 
 
+
 def _coerce_price_column(frame: pd.DataFrame) -> str:
     """Return the preferred analysis price column available in the frame."""
 
@@ -21,6 +22,7 @@ def _coerce_price_column(frame: pd.DataFrame) -> str:
     raise KeyError(
         "A price column is required. Expected one of: analysis_price, adjusted_close, close_price."
     )
+
 
 
 def _prepare_market_frame(price_history: pd.DataFrame) -> pd.DataFrame:
@@ -53,6 +55,7 @@ def _prepare_market_frame(price_history: pd.DataFrame) -> pd.DataFrame:
     frame[price_column] = pd.to_numeric(frame[price_column], errors="coerce")
     frame = frame.dropna(subset=[price_column]).sort_values(["asset_id", "price_date"]).reset_index(drop=True)
     return frame
+
 
 
 def build_technical_feature_frame(price_history: pd.DataFrame) -> pd.DataFrame:
@@ -166,6 +169,7 @@ def build_technical_feature_frame(price_history: pd.DataFrame) -> pd.DataFrame:
     return combined[available_columns]
 
 
+
 def build_sentiment_feature_frame(news_history: pd.DataFrame) -> pd.DataFrame:
     """Aggregate stored article-level sentiment into daily and trailing features."""
 
@@ -182,6 +186,8 @@ def build_sentiment_feature_frame(news_history: pd.DataFrame) -> pd.DataFrame:
                 "negative_article_share_7d",
                 "positive_article_share_7d",
                 "article_count_7d",
+                "source_count_7d",
+                "source_sentiment_dispersion_7d",
             ]
         )
 
@@ -199,6 +205,9 @@ def build_sentiment_feature_frame(news_history: pd.DataFrame) -> pd.DataFrame:
     frame["feature_date"] = frame["published_at"].dt.normalize()
     frame["is_negative"] = (frame["sentiment_label"].str.lower() == "negative").astype(float)
     frame["is_positive"] = (frame["sentiment_label"].str.lower() == "positive").astype(float)
+    if "source_name" not in frame.columns:
+        frame["source_name"] = "unknown_source"
+    frame["source_name"] = frame["source_name"].fillna("unknown_source").astype(str)
 
     daily = (
         frame.groupby(["asset_id", "ticker", "feature_date"], as_index=False)
@@ -207,8 +216,22 @@ def build_sentiment_feature_frame(news_history: pd.DataFrame) -> pd.DataFrame:
             sentiment_mean_1d=("sentiment_score", "mean"),
             negative_article_share_1d=("is_negative", "mean"),
             positive_article_share_1d=("is_positive", "mean"),
+            source_count_1d=("source_name", "nunique"),
         )
         .sort_values(["asset_id", "feature_date"])
+    )
+    source_daily = (
+        frame.groupby(["asset_id", "ticker", "feature_date", "source_name"], as_index=False)
+        .agg(source_sentiment_mean_1d=("sentiment_score", "mean"))
+    )
+    source_dispersion = (
+        source_daily.groupby(["asset_id", "ticker", "feature_date"], as_index=False)
+        .agg(source_sentiment_dispersion_1d=("source_sentiment_mean_1d", "std"))
+    )
+    daily = daily.merge(
+        source_dispersion,
+        on=["asset_id", "ticker", "feature_date"],
+        how="left",
     )
 
     sentiment_frames: list[pd.DataFrame] = []
@@ -225,6 +248,11 @@ def build_sentiment_feature_frame(news_history: pd.DataFrame) -> pd.DataFrame:
             min_periods=1,
         ).mean()
         asset_frame["article_count_7d"] = asset_frame["article_count_1d"].rolling(7, min_periods=1).sum()
+        asset_frame["source_count_7d"] = asset_frame["source_count_1d"].rolling(7, min_periods=1).max()
+        asset_frame["source_sentiment_dispersion_7d"] = asset_frame["source_sentiment_dispersion_1d"].rolling(
+            7,
+            min_periods=1,
+        ).mean()
         asset_frame = asset_frame.reset_index()
         asset_frame["feature_date"] = asset_frame["feature_date"].dt.date
         asset_frame["asset_id"] = asset_id
@@ -244,5 +272,7 @@ def build_sentiment_feature_frame(news_history: pd.DataFrame) -> pd.DataFrame:
             "negative_article_share_7d",
             "positive_article_share_7d",
             "article_count_7d",
+            "source_count_7d",
+            "source_sentiment_dispersion_7d",
         ]
     ]

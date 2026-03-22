@@ -795,3 +795,199 @@ def ensure_sentiment_for_ticker(
         "fetched": True,
         "article_count": summary["articles_loaded"],
     }
+
+
+def _parse_json_field(value: Any) -> Any:
+    """Best-effort parse for JSON-backed ML payload fields."""
+
+    import json
+
+    if value in (None, "", []):
+        return [] if value == [] else None
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return value
+
+
+
+def load_latest_ml_forecast(ticker: str) -> dict[str, Any] | None:
+    """Return the latest ML signal snapshot for an asset if available."""
+
+    with session_scope() as session:
+        get_latest_prediction = getattr(database_queries, "get_latest_ml_prediction", None)
+        if get_latest_prediction is None:
+            return None
+        try:
+            snapshot = get_latest_prediction(session, ticker=ticker)
+        except OperationalError:
+            return None
+
+    if snapshot is None:
+        return None
+
+    for json_field in ("pillar_weights_json", "feature_importance_json", "top_features_json", "evaluation_summary"):
+        if json_field in snapshot:
+            snapshot[json_field] = _parse_json_field(snapshot.get(json_field))
+    return snapshot
+
+
+
+def load_ml_prediction_history(
+    ticker: str,
+    limit: int = DEFAULT_ML_PREDICTION_HISTORY,
+) -> list[dict[str, Any]]:
+    """Return recent stored ML prediction history for charting/reporting."""
+
+    with session_scope() as session:
+        get_prediction_history = getattr(database_queries, "get_ml_prediction_history", None)
+        if get_prediction_history is None:
+            return []
+        try:
+            return get_prediction_history(session, ticker=ticker, limit=limit)
+        except OperationalError:
+            return []
+
+
+
+def prepare_ml_prediction_history_frame(prediction_rows: list[dict[str, Any]]) -> pd.DataFrame:
+    """Prepare stored prediction history for charting and report usage."""
+
+    from src.ml.score import prepare_prediction_history_frame as prepare_history
+
+    if not prediction_rows:
+        return pd.DataFrame()
+    return prepare_history(pd.DataFrame(prediction_rows))
+
+
+
+def build_ml_forecast_summary(ticker: str) -> dict[str, Any]:
+    """Build an app/report-friendly ML signal summary for one asset."""
+
+    snapshot = load_latest_ml_forecast(ticker)
+    build_status = None
+    if snapshot is None:
+        build_status = ensure_ml_forecast_for_ticker(ticker)
+        if build_status.get("success"):
+            snapshot = load_latest_ml_forecast(ticker)
+
+    prediction_history = prepare_ml_prediction_history_frame(load_ml_prediction_history(ticker))
+
+    if snapshot is None:
+        return {
+            "available": False,
+            "snapshot": None,
+            "prediction_history": prediction_history,
+            "feature_drivers": [],
+            "feature_importance": [],
+            "pillar_weights": [],
+            "pillar_contributions": [],
+            "build_status": build_status,
+            "target_definition": None,
+            "interpretation": (
+                build_status["message"]
+                if build_status and build_status.get("message")
+                else "No stored machine-learning signal is currently available for this asset."
+            ),
+        }
+
+    expected_return = _safe_float(snapshot.get("predicted_return_20d"))
+    downside_probability = _safe_float(snapshot.get("downside_probability_20d"))
+    probability_positive = _safe_float(snapshot.get("probability_positive_20d"))
+    confidence_score = _safe_float(snapshot.get("confidence_score"))
+    composite_ml_score = _safe_float(snapshot.get("composite_ml_score"))
+    history_score = _safe_float(snapshot.get("history_score"))
+    risk_score = _safe_float(snapshot.get("risk_score"))
+    sentiment_score = _safe_float(snapshot.get("sentiment_score"))
+    pillar_weights = snapshot.get("pillar_weights_json") or []
+    feature_importance = snapshot.get("feature_importance_json") or []
+    top_features = snapshot.get("top_features_json") or []
+    pillar_contributions = [
+        {"pillar": "History", "contribution": _safe_float(snapshot.get("history_contribution")) or 0.0},
+        {"pillar": "Risk", "contribution": _safe_float(snapshot.get("risk_contribution")) or 0.0},
+        {"pillar": "Sentiment", "contribution": _safe_float(snapshot.get("sentiment_contribution")) or 0.0},
+    ]
+    directional_signal = snapshot.get("directional_signal") or "Neutral"
+    target_definition = {
+        "name": snapshot.get("target_name") or "forward_return_20d",
+        "horizon_days": int(snapshot.get("prediction_horizon_days") or 20),
+        "summary": (
+            "The decision-support model targets forward 20-trading-day return rather than price level, "
+            "because return is more stable across assets and better aligned with research workflows."
+        ),
+    }
+    model_summary = {
+        "selected_model_name": snapshot.get("selected_model_name") or snapshot.get("regression_model_name"),
+        "classification_model_name": snapshot.get("classification_model_name"),
+        "model_family": snapshot.get("model_family") or "machine_learning_signal_calibration",
+        "training_start_date": (
+            snapshot.get("evaluation_summary", {}).get("training_start_date")
+            if isinstance(snapshot.get("evaluation_summary"), dict)
+            else None
+        ),
+    }
+    training_window = {
+        "start_date": snapshot.get("run_timestamp") or snapshot.get("as_of_date"),
+        "end_date": snapshot.get("as_of_date"),
+        "feature_version": snapshot.get("feature_version") or "v1",
+    }
+
+    interpretation_parts = [
+        (
+            f"The machine learning calibration layer assigns {ticker.upper()} a composite score of {composite_ml_score:.1f} "
+            f"with a {directional_signal.lower()} signal."
+        )
+        if composite_ml_score is not None
+        else f"A machine learning signal is available for {ticker.upper()}, but the composite score is unavailable.",
+        (
+            f"The current model-implied 20-day return is {expected_return:.2%}, while the probability of a positive "
+            f"20-day return is {probability_positive:.2%}."
+        )
+        if expected_return is not None and probability_positive is not None
+        else "Forward return and directional probability estimates are only partially available.",
+        (
+            f"Pillar context currently reads history {history_score:.2f}, risk {risk_score:.2f}, and sentiment {sentiment_score:.2f}."
+        )
+        if history_score is not None and risk_score is not None and sentiment_score is not None
+        else "Pillar-level context is partially available for the current snapshot.",
+        (
+            f"Confidence is {confidence_score:.0%}, which reflects signal strength and agreement between the linear weighting engine "
+            "and the nonlinear challenger model."
+        )
+        if confidence_score is not None
+        else "Confidence context is unavailable for the current snapshot.",
+    ]
+    if downside_probability is not None:
+        interpretation_parts.append(
+            f"The probability of a negative 20-day return is {downside_probability:.2%}, which frames the downside context as {_classify_downside_context(downside_probability).lower()}."
+        )
+
+    snapshot = {
+        **snapshot,
+        "predicted_return_20d": expected_return,
+        "downside_probability_20d": downside_probability,
+        "probability_positive_20d": probability_positive,
+        "confidence_score": confidence_score,
+        "composite_ml_score": composite_ml_score,
+        "history_score": history_score,
+        "risk_score": risk_score,
+        "sentiment_score": sentiment_score,
+        "regime_label": directional_signal,
+    }
+
+    return {
+        "available": True,
+        "build_status": build_status,
+        "snapshot": snapshot,
+        "prediction_history": prediction_history,
+        "feature_drivers": top_features,
+        "feature_importance": feature_importance,
+        "pillar_weights": pillar_weights,
+        "pillar_contributions": pillar_contributions,
+        "target_definition": target_definition,
+        "model_summary": model_summary,
+        "training_window": training_window,
+        "interpretation": " ".join(interpretation_parts),
+    }

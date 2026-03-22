@@ -215,10 +215,13 @@ def get_sentiment_source_frame(
             a.ticker,
             na.published_at,
             na.sentiment_score,
-            na.sentiment_label
+            na.sentiment_label,
+            ds.source_name
         FROM news_articles na
         JOIN assets a
           ON na.asset_id = a.id
+        JOIN data_sources ds
+          ON na.source_id = ds.id
         WHERE 1 = 1
     """
     params: dict[str, Any] = {}
@@ -285,7 +288,9 @@ def get_ml_training_frame(
             sf.sentiment_std_7d,
             sf.negative_article_share_7d,
             sf.positive_article_share_7d,
-            sf.article_count_7d
+            sf.article_count_7d,
+            sf.source_count_7d,
+            sf.source_sentiment_dispersion_7d
         FROM technical_features tf
         JOIN assets a
           ON tf.asset_id = a.id
@@ -326,7 +331,14 @@ def get_ml_predictions(
             mp.classification_model_name,
             mp.predicted_return_20d,
             mp.downside_probability_20d,
+            mp.probability_positive_20d,
             mp.predicted_negative_return_flag,
+            mp.composite_ml_score,
+            mp.confidence_score,
+            mp.directional_signal,
+            mp.history_score,
+            mp.risk_score,
+            mp.sentiment_score,
             mp.prediction_generated_at
         FROM ml_predictions mp
         JOIN assets a
@@ -357,9 +369,25 @@ def get_latest_ml_prediction(
             mp.model_run_id,
             mp.regression_model_name,
             mp.classification_model_name,
+            mp.selected_model_name,
+            mp.model_family,
+            mp.target_name,
             mp.predicted_return_20d,
             mp.downside_probability_20d,
+            mp.probability_positive_20d,
             mp.predicted_negative_return_flag,
+            mp.composite_ml_score,
+            mp.confidence_score,
+            mp.directional_signal,
+            mp.history_score,
+            mp.risk_score,
+            mp.sentiment_score,
+            mp.history_contribution,
+            mp.risk_contribution,
+            mp.sentiment_contribution,
+            mp.pillar_weights_json,
+            mp.feature_importance_json,
+            mp.top_features_json,
             mp.prediction_generated_at,
             mr.run_timestamp,
             mr.evaluation_summary,
@@ -375,7 +403,9 @@ def get_latest_ml_prediction(
             sf.sentiment_mean_1d,
             sf.sentiment_mean_7d,
             sf.negative_article_share_7d,
-            sf.article_count_7d
+            sf.article_count_7d,
+            sf.source_count_7d,
+            sf.source_sentiment_dispersion_7d
         FROM ml_predictions mp
         JOIN assets a
           ON mp.asset_id = a.id
@@ -414,7 +444,14 @@ def get_ml_prediction_history(
             mp.classification_model_name,
             mp.predicted_return_20d,
             mp.downside_probability_20d,
+            mp.probability_positive_20d,
             mp.predicted_negative_return_flag,
+            mp.composite_ml_score,
+            mp.confidence_score,
+            mp.directional_signal,
+            mp.history_score,
+            mp.risk_score,
+            mp.sentiment_score,
             mp.prediction_generated_at
         FROM ml_predictions mp
         JOIN assets a
@@ -450,7 +487,9 @@ def get_feature_driver_frame(
             tf.volume_ratio_20d,
             sf.sentiment_mean_7d,
             sf.negative_article_share_7d,
-            sf.article_count_7d
+            sf.article_count_7d,
+            sf.source_count_7d,
+            sf.source_sentiment_dispersion_7d
         FROM technical_features tf
         JOIN assets a
           ON tf.asset_id = a.id

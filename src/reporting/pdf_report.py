@@ -806,13 +806,13 @@ def _render_ml_forecast_page(
     pdf: FPDF,
     context: dict,
     forecast_history_chart: str | None,
-    feature_driver_chart: str | None,
-    simulation_comparison_chart: str | None,
+    pillar_contribution_chart: str | None,
+    feature_importance_chart: str | None,
 ) -> None:
-    """Render a dedicated model-informed forecast and risk outlook page."""
+    """Render a dedicated machine-learning signal calibration page."""
 
     pdf.add_page()
-    _draw_section_header(pdf, "05", "Model-Informed Forecast & Risk Outlook", "Forecasting Layer")
+    _draw_section_header(pdf, "05", "Machine Learning Signal Calibration", "Decision-Support Layer")
 
     ml_summary = context["ml_forecast"]
     if not ml_summary["available"]:
@@ -822,7 +822,7 @@ def _render_ml_forecast_page(
             pdf.get_y(),
             176,
             36,
-            "Forecast Availability",
+            "Signal Availability",
             ml_summary["interpretation"],
         )
         return
@@ -831,67 +831,58 @@ def _render_ml_forecast_page(
     top_y = pdf.get_y()
     metric_w = (pdf.w - pdf.l_margin - pdf.r_margin - 12) / 4
     metric_items = [
-        ("Expected 20-Day Return", _format_percent(snapshot["predicted_return_20d"])),
-        ("Probability Negative", _format_percent(snapshot["downside_probability_20d"])),
-        ("Volatility Proxy", _format_percent(snapshot["predicted_volatility_20d"])),
-        ("Regime Context", snapshot["regime_label"]),
+        ("Composite Score", _format_number(snapshot["composite_ml_score"])),
+        ("Directional Signal", snapshot.get("directional_signal") or snapshot["regime_label"]),
+        ("Confidence", _format_percent(snapshot["confidence_score"])),
+        ("Selected Model", snapshot.get("selected_model_name") or snapshot["regression_model_name"]),
     ]
     for idx, (label, value) in enumerate(metric_items):
         x = pdf.l_margin + idx * (metric_w + 4)
         _draw_labeled_box(pdf, x, top_y, metric_w, 16, label, value)
 
-    row_y = top_y + 22
-    if forecast_history_chart is not None:
-        pdf.image(forecast_history_chart, x=pdf.l_margin, y=row_y, w=108)
-    else:
-        _draw_note_strip(
-            pdf,
-            pdf.l_margin,
-            row_y,
-            108,
-            26,
-            "Prediction history is not yet deep enough to show a stable trend exhibit.",
-        )
-
+    summary_y = top_y + 22
+    summary_rows = [
+        ("Target", context["ml_forecast"]["target_definition"]["name"]),
+        ("Horizon", f"{int(snapshot['prediction_horizon_days'])} trading days"),
+        ("Expected Return", _format_percent(snapshot["predicted_return_20d"])),
+        ("Probability Positive", _format_percent(snapshot["probability_positive_20d"])),
+        ("History / Risk / Sentiment", f"{_format_number(snapshot['history_score'])} / {_format_number(snapshot['risk_score'])} / {_format_number(snapshot['sentiment_score'])}"),
+    ]
+    _draw_key_value_table(pdf, pdf.l_margin, summary_y, 86, summary_rows, title="Methodology Summary")
     _draw_fitted_text_box(
         pdf,
-        pdf.l_margin + 112,
-        row_y,
-        64,
-        54,
-        "Forecast Interpretation",
+        pdf.l_margin + 90,
+        summary_y,
+        86,
+        30,
+        "Interpretation",
         context["narrative"]["ml_commentary"],
     )
 
-    lower_y = 154
-    if feature_driver_chart is not None:
-        pdf.image(feature_driver_chart, x=pdf.l_margin, y=lower_y, w=84)
+    row_y = 142
+    if forecast_history_chart is not None:
+        pdf.image(forecast_history_chart, x=pdf.l_margin, y=row_y, w=84)
     else:
-        _draw_note_strip(
-            pdf,
-            pdf.l_margin,
-            lower_y,
-            84,
-            22,
-            "Current forecast driver context is unavailable for this snapshot.",
-        )
+        _draw_note_strip(pdf, pdf.l_margin, row_y, 84, 20, "Signal history is not yet deep enough for a stable trend exhibit.")
 
-    if simulation_comparison_chart is not None:
-        pdf.image(simulation_comparison_chart, x=pdf.l_margin + 88, y=lower_y, w=88)
+    if pillar_contribution_chart is not None:
+        pdf.image(pillar_contribution_chart, x=pdf.l_margin + 90, y=row_y, w=86)
+    else:
+        _draw_note_strip(pdf, pdf.l_margin + 90, row_y, 86, 20, "Pillar contribution context is unavailable for this snapshot.")
 
-    _draw_terminal_percentile_table(
-        pdf,
-        pdf.l_margin,
-        218,
-        context["ml_terminal_percentiles"],
-    )
+    lower_y = 206
+    if feature_importance_chart is not None:
+        pdf.image(feature_importance_chart, x=pdf.l_margin, y=lower_y, w=92)
+    else:
+        _draw_note_strip(pdf, pdf.l_margin, lower_y, 92, 18, "Top feature importance is unavailable for this model run.")
+
     _draw_fitted_text_box(
         pdf,
-        pdf.l_margin + 64,
-        218,
-        112,
-        26,
-        "Scenario Comparison",
+        pdf.l_margin + 96,
+        lower_y,
+        80,
+        24,
+        "Scenario Role",
         context["narrative"]["comparative_simulation_commentary"],
     )
 
@@ -1063,15 +1054,21 @@ def generate_asset_pdf_report(
             and not context["ml_forecast"]["prediction_history"].empty
             and context["ml_forecast"]["prediction_history"].shape[0] >= 2
         ):
-            forecast_history_chart = charts.save_prediction_history_chart(
+            forecast_history_chart = charts.save_ml_score_history_chart(
                 context["ml_forecast"]["prediction_history"],
                 tmp / "forecast_history.png",
             )
-        feature_driver_chart = None
-        if context["ml_forecast"]["available"] and context["ml_forecast"]["feature_drivers"]:
-            feature_driver_chart = charts.save_feature_driver_chart(
-                context["ml_forecast"]["feature_drivers"],
-                tmp / "feature_drivers.png",
+        pillar_contribution_chart = None
+        if context["ml_forecast"]["available"] and context["ml_forecast"].get("pillar_contributions"):
+            pillar_contribution_chart = charts.save_pillar_contribution_chart(
+                context["ml_forecast"]["pillar_contributions"],
+                tmp / "pillar_contributions.png",
+            )
+        feature_importance_chart = None
+        if context["ml_forecast"]["available"] and context["ml_forecast"].get("feature_importance"):
+            feature_importance_chart = charts.save_feature_importance_breakdown_chart(
+                context["ml_forecast"]["feature_importance"][:8],
+                tmp / "feature_importance.png",
             )
         paths_chart = charts.save_monte_carlo_paths_chart(
             context["simulation"]["historical"]["paths"],
@@ -1102,8 +1099,8 @@ def generate_asset_pdf_report(
             pdf,
             context,
             forecast_history_chart,
-            feature_driver_chart,
-            simulation_comparison_chart,
+            pillar_contribution_chart,
+            feature_importance_chart,
         )
         _render_sentiment_page(pdf, context, sentiment_chart)
         _render_methodology_page(pdf, context)

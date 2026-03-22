@@ -178,6 +178,9 @@ class MlIntegrationTests(unittest.TestCase):
         self.assertTrue(ml_summary["available"])
         self.assertIn("probability", ml_summary["interpretation"].lower())
         self.assertIn("regime_label", ml_summary["snapshot"])
+        self.assertIn("composite_ml_score", ml_summary["snapshot"])
+        self.assertTrue(ml_summary["pillar_contributions"])
+        self.assertTrue(ml_summary["feature_importance"])
 
         report_context = self.report_data_module.build_asset_report_context(
             ticker="AAPL",

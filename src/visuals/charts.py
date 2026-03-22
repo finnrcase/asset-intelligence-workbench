@@ -694,3 +694,187 @@ def save_simulation_comparison_chart(
     ax.legend(frameon=False, fontsize=9, loc="upper left")
     _save_matplotlib_figure(output_path)
     return str(output_path)
+
+
+def create_ml_score_history_chart(prediction_history: pd.DataFrame) -> go.Figure:
+    """Build a chart for recent composite score and directional probability history."""
+
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=prediction_history["as_of_date"],
+            y=prediction_history["composite_ml_score"],
+            mode="lines+markers",
+            line=dict(color="#0f4c81", width=2.4),
+            marker=dict(size=5),
+            name="Composite Score",
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=prediction_history["as_of_date"],
+            y=prediction_history["probability_positive_20d"],
+            mode="lines+markers",
+            line=dict(color="#2e7d32", width=2.0),
+            marker=dict(size=5),
+            name="Probability Positive",
+            yaxis="y2",
+        )
+    )
+    figure.update_layout(
+        template="plotly_white",
+        height=320,
+        margin=dict(l=20, r=20, t=48, b=20),
+        hovermode="x unified",
+        xaxis_title="As Of Date",
+        yaxis=dict(title="Composite Score", range=[-100, 100]),
+        yaxis2=dict(
+            title="Probability Positive",
+            tickformat=".0%",
+            overlaying="y",
+            side="right",
+            showgrid=False,
+            range=[0, 1],
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        title="ML Signal History",
+        font=dict(size=12),
+    )
+    figure.update_xaxes(showgrid=False)
+    figure.update_yaxes(gridcolor="rgba(15, 23, 42, 0.08)")
+    return figure
+
+
+
+def create_pillar_contribution_chart(contribution_rows: list[dict[str, object]]) -> go.Figure:
+    """Build a chart for latest pillar contributions."""
+
+    labels = [str(row["pillar"]) for row in contribution_rows]
+    values = [float(row["contribution"]) for row in contribution_rows]
+    colors = ["#0f4c81" if value >= 0 else "#b0453b" for value in values]
+    figure = go.Figure(
+        go.Bar(
+            x=labels,
+            y=values,
+            marker_color=colors,
+        )
+    )
+    figure.update_layout(
+        template="plotly_white",
+        height=320,
+        margin=dict(l=20, r=20, t=48, b=20),
+        xaxis_title="Signal Pillar",
+        yaxis_title="Contribution",
+        title="Latest Pillar Contribution Breakdown",
+        font=dict(size=12),
+    )
+    figure.update_xaxes(showgrid=False)
+    figure.update_yaxes(gridcolor="rgba(15, 23, 42, 0.08)")
+    return figure
+
+
+
+def create_feature_importance_chart(feature_rows: list[dict[str, object]]) -> go.Figure:
+    """Build a chart for top feature importance rows."""
+
+    ordered = sorted(feature_rows, key=lambda row: float(row.get("importance", 0.0)), reverse=True)
+    labels = [str(row.get("feature", "")).replace("_", " ").title() for row in ordered]
+    values = [float(row.get("importance", 0.0)) for row in ordered]
+    figure = go.Figure(
+        go.Bar(
+            x=values,
+            y=labels,
+            orientation="h",
+            marker_color="#0f4c81",
+        )
+    )
+    figure.update_layout(
+        template="plotly_white",
+        height=320,
+        margin=dict(l=20, r=20, t=48, b=20),
+        xaxis_title="Importance",
+        yaxis_title="Feature",
+        title="Top ML Feature Importance",
+        font=dict(size=12),
+    )
+    figure.update_xaxes(showgrid=True, gridcolor="rgba(15, 23, 42, 0.08)")
+    figure.update_yaxes(showgrid=False, autorange="reversed")
+    return figure
+
+
+
+def save_ml_score_history_chart(
+    prediction_history: pd.DataFrame,
+    output_path: str | Path,
+) -> str:
+    """Render a static composite-score history chart for PDF reporting."""
+
+    fig, ax = plt.subplots(figsize=REPORT_CHART_SIZES["forecast_history"])
+    ax.plot(
+        prediction_history["as_of_date"],
+        prediction_history["composite_ml_score"],
+        color="#0f4c81",
+        linewidth=REPORT_LINE_WIDTH - 0.2,
+        marker="o",
+        markersize=4,
+    )
+    ax.set_xlabel("As Of Date")
+    _apply_report_axes_style(ax, "ML Signal History", "Composite Score")
+    ax.set_ylim(-100, 100)
+
+    secondary_ax = ax.twinx()
+    secondary_ax.plot(
+        prediction_history["as_of_date"],
+        prediction_history["probability_positive_20d"],
+        color="#2e7d32",
+        linewidth=REPORT_LINE_WIDTH - 0.6,
+    )
+    secondary_ax.set_ylabel("Probability Positive", fontsize=REPORT_AXIS_LABEL_SIZE, color="#3d4e5f")
+    secondary_ax.tick_params(axis="y", labelsize=REPORT_TICK_LABEL_SIZE, colors="#536272")
+    secondary_ax.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+    secondary_ax.set_ylim(0.0, 1.0)
+    secondary_ax.spines["top"].set_visible(False)
+    secondary_ax.spines["left"].set_visible(False)
+    secondary_ax.spines["right"].set_color("#ccd6df")
+    secondary_ax.spines["right"].set_linewidth(0.9)
+
+    _save_matplotlib_figure(output_path)
+    return str(output_path)
+
+
+
+def save_pillar_contribution_chart(
+    contribution_rows: list[dict[str, object]],
+    output_path: str | Path,
+) -> str:
+    """Render a static pillar-contribution chart for PDF reporting."""
+
+    labels = [str(row["pillar"]) for row in contribution_rows]
+    values = [float(row["contribution"]) for row in contribution_rows]
+    colors = ["#0f4c81" if value >= 0 else "#b0453b" for value in values]
+
+    fig, ax = plt.subplots(figsize=REPORT_CHART_SIZES["feature_drivers"])
+    ax.bar(labels, values, color=colors, alpha=0.88)
+    _apply_report_axes_style(ax, "Pillar Contribution Breakdown", "Contribution")
+    _save_matplotlib_figure(output_path)
+    return str(output_path)
+
+
+
+def save_feature_importance_breakdown_chart(
+    feature_rows: list[dict[str, object]],
+    output_path: str | Path,
+) -> str:
+    """Render a static top-feature-importance chart for PDF reporting."""
+
+    ordered = sorted(feature_rows, key=lambda row: float(row.get("importance", 0.0)), reverse=True)
+    labels = [str(row.get("feature", "")).replace("_", " ").title() for row in ordered]
+    values = [float(row.get("importance", 0.0)) for row in ordered]
+
+    fig, ax = plt.subplots(figsize=REPORT_CHART_SIZES["feature_drivers"])
+    ax.barh(labels, values, color="#0f4c81", alpha=0.88)
+    ax.invert_yaxis()
+    ax.set_xlabel("Importance")
+    _apply_report_axes_style(ax, "Top ML Feature Importance", "Feature")
+    _save_matplotlib_figure(output_path)
+    return str(output_path)

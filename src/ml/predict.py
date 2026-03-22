@@ -1,5 +1,5 @@
 """
-Prediction workflow for SQL-backed return and downside-risk forecasts.
+Prediction workflow for the machine learning signal-calibration layer.
 """
 
 from __future__ import annotations
@@ -12,31 +12,36 @@ from sqlalchemy.orm import Session
 
 from src.database import loaders as database_loaders
 from src.database import queries as database_queries
+from src.ml.features import latest_rows_by_asset
+from src.ml.interpret import aggregate_feature_contributions_by_pillar
+from src.ml.interpret import compute_linear_feature_contributions
+from src.ml.interpret import serialize_rows
+from src.ml.score import classify_directional_signal
+from src.ml.score import compute_composite_ml_score
+from src.ml.score import compute_confidence_score
 from src.ml.train import prepare_model_frame
+from src.ml.targets import TARGET_NAME
+
 
 
 def build_prediction_frame(
     feature_frame: pd.DataFrame,
+    feature_columns: list[str],
     as_of_date: date | None = None,
 ) -> pd.DataFrame:
-    """Filter the feature store down to the latest row per asset for prediction."""
+    """Filter the engineered feature frame down to the latest scoring row per asset."""
 
     if feature_frame.empty:
         return feature_frame.copy()
 
-    frame = feature_frame.copy()
-    frame["feature_date"] = pd.to_datetime(frame["feature_date"])
-    if as_of_date is not None:
-        frame = frame[frame["feature_date"] <= pd.Timestamp(as_of_date)]
-    if frame.empty:
-        return frame
+    prepared_frame, _, _ = prepare_model_frame(feature_frame, feature_columns)
+    return latest_rows_by_asset(prepared_frame, as_of_date=pd.Timestamp(as_of_date) if as_of_date else None)
 
-    return (
-        frame.sort_values(["asset_id", "feature_date"])
-        .groupby("asset_id", as_index=False)
-        .tail(1)
-        .reset_index(drop=True)
-    )
+
+
+def _row_to_dataframe(row: pd.Series) -> pd.DataFrame:
+    return pd.DataFrame([row.to_dict()])
+
 
 
 def generate_predictions(
@@ -45,51 +50,91 @@ def generate_predictions(
     as_of_date: date | None = None,
     prediction_horizon_days: int = 20,
 ) -> pd.DataFrame:
-    """Generate probabilistic return/downside forecasts from the selected models."""
+    """Generate composite ML scores, directional signals, and interpretability payloads."""
 
     if feature_frame.empty:
         return pd.DataFrame()
 
-    prepared_frame, feature_columns = prepare_model_frame(
+    prepared_frame, feature_columns, feature_groups = prepare_model_frame(
         feature_frame,
         training_result["feature_columns"],
     )
-    prediction_frame = build_prediction_frame(prepared_frame, as_of_date=as_of_date)
+    prediction_frame = latest_rows_by_asset(prepared_frame, as_of_date=pd.Timestamp(as_of_date) if as_of_date else None)
     if prediction_frame.empty:
         return pd.DataFrame()
 
-    regression_model_name = training_result["selected_models"]["regression"]
-    classification_model_name = training_result["selected_models"]["classification"]
-    regression_model = training_result["models"]["regression"][regression_model_name]
-    classification_model = training_result["models"]["classification"][classification_model_name]
+    linear_model = training_result["models"]["regression"][training_result["selected_models"]["regression"]]
+    comparison_model = training_result["models"]["regression"][training_result["selected_models"]["comparison"]]
+    classification_model = training_result["models"]["classification"][training_result["selected_models"]["classification"]]
 
-    prediction_frame["predicted_return_20d"] = regression_model.predict(prediction_frame[feature_columns])
-    prediction_frame["downside_probability_20d"] = classification_model.predict_proba(
-        prediction_frame[feature_columns]
-    )[:, 1]
-    prediction_frame["predicted_negative_return_flag"] = (
-        prediction_frame["downside_probability_20d"] >= 0.5
-    ).astype(int)
-    prediction_frame["prediction_horizon_days"] = prediction_horizon_days
-    prediction_frame["regression_model_name"] = regression_model_name
-    prediction_frame["classification_model_name"] = classification_model_name
-    prediction_frame["as_of_date"] = prediction_frame["feature_date"].dt.date
-    prediction_frame["prediction_generated_at"] = datetime.utcnow()
+    target_scale = float(training_result["target_statistics"]["std"])
+    top_feature_rows = training_result["interpretability"]["nonlinear_feature_importance"]
+    pillar_weight_rows = training_result["interpretability"]["linear_pillar_weights"]
 
-    return prediction_frame[
-        [
-            "asset_id",
-            "ticker",
-            "as_of_date",
-            "prediction_horizon_days",
-            "regression_model_name",
-            "classification_model_name",
-            "predicted_return_20d",
-            "downside_probability_20d",
-            "predicted_negative_return_flag",
-            "prediction_generated_at",
-        ]
-    ].copy()
+    result_rows: list[dict[str, Any]] = []
+    for _, row in prediction_frame.iterrows():
+        row_frame = _row_to_dataframe(row)
+        predicted_return = float(linear_model.predict(row_frame[feature_columns])[0])
+        comparison_predicted_return = float(comparison_model.predict(row_frame[feature_columns])[0])
+        probability_positive = float(classification_model.predict_proba(row_frame[feature_columns])[:, 1][0])
+        downside_probability = 1.0 - probability_positive
+        feature_contributions = compute_linear_feature_contributions(
+            linear_model,
+            row_frame,
+            feature_columns,
+        )
+        pillar_contributions = aggregate_feature_contributions_by_pillar(
+            feature_contributions,
+            feature_groups,
+        )
+        composite_ml_score = compute_composite_ml_score(
+            predicted_return=predicted_return,
+            probability_positive=probability_positive,
+            history_score=float(row.get("history_score", 0.0)),
+            risk_score=float(row.get("risk_score", 0.0)),
+            sentiment_score=float(row.get("sentiment_score", 0.0)),
+            target_volatility_scale=target_scale,
+        )
+        confidence_score = compute_confidence_score(
+            predicted_return=predicted_return,
+            comparison_predicted_return=comparison_predicted_return,
+            probability_positive=probability_positive,
+            target_volatility_scale=target_scale,
+        )
+        result_rows.append(
+            {
+                "asset_id": row["asset_id"],
+                "ticker": row["ticker"],
+                "as_of_date": pd.Timestamp(row["feature_date"]).date(),
+                "prediction_horizon_days": prediction_horizon_days,
+                "model_run_id": None,
+                "regression_model_name": training_result["selected_models"]["regression"],
+                "classification_model_name": training_result["selected_models"]["classification"],
+                "selected_model_name": training_result["selected_models"]["regression"],
+                "model_family": "machine_learning_signal_calibration",
+                "target_name": TARGET_NAME,
+                "predicted_return_20d": predicted_return,
+                "downside_probability_20d": downside_probability,
+                "probability_positive_20d": probability_positive,
+                "predicted_negative_return_flag": int(downside_probability >= 0.5),
+                "composite_ml_score": composite_ml_score,
+                "confidence_score": confidence_score,
+                "directional_signal": classify_directional_signal(composite_ml_score),
+                "history_score": float(row.get("history_score", 0.0)),
+                "risk_score": float(row.get("risk_score", 0.0)),
+                "sentiment_score": float(row.get("sentiment_score", 0.0)),
+                "history_contribution": float(pillar_contributions.get("history", 0.0)),
+                "risk_contribution": float(pillar_contributions.get("risk", 0.0)),
+                "sentiment_contribution": float(pillar_contributions.get("sentiment", 0.0)),
+                "pillar_weights_json": pillar_weight_rows,
+                "feature_importance_json": serialize_rows(top_feature_rows, top_n=8),
+                "top_features_json": serialize_rows(feature_contributions, top_n=8),
+                "prediction_generated_at": datetime.utcnow(),
+            }
+        )
+
+    return pd.DataFrame(result_rows)
+
 
 
 def predict_from_feature_store(
@@ -100,7 +145,7 @@ def predict_from_feature_store(
     model_run_id: str | None = None,
     write_to_sql: bool = True,
 ) -> pd.DataFrame:
-    """Read stored features from SQL, generate forecasts, and optionally persist them."""
+    """Read stored features from SQL, score them, and optionally persist the output."""
 
     feature_frame = database_queries.get_ml_training_frame(session=session, ticker=ticker)
     prediction_frame = generate_predictions(

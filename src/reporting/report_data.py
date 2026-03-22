@@ -125,22 +125,22 @@ def _build_sentiment_commentary(sentiment_summary: dict[str, Any]) -> str:
 
 
 def _build_ml_commentary(ml_summary: dict[str, Any]) -> str:
-    """Build a concise analyst-language paragraph for the ML forecast layer."""
+    """Build a concise analyst-language paragraph for the ML signal-calibration layer."""
 
     if not ml_summary["available"]:
         return (
-            "No stored model-informed forecast was available at report generation time, so the forward outlook "
+            "No stored machine-learning signal was available at report generation time, so the forward outlook "
             "continues to rely on historical-input scenario analysis only."
         )
 
     snapshot = ml_summary["snapshot"]
     return (
-        f"The latest model-implied expected {int(snapshot['prediction_horizon_days'])}-day return is "
-        f"{_format_percent(snapshot['predicted_return_20d'])}, while the probability of a negative forward "
-        f"return is {_format_percent(snapshot['downside_probability_20d'])}. "
-        f"Recent realized volatility of {_format_percent(snapshot['predicted_volatility_20d'])} is used as a "
-        "practical uncertainty proxy for the ML-informed scenario overlay. "
-        f"Current regime context is summarized as {snapshot['regime_label'].lower()}."
+        f"The current machine-learning signal assigns a composite score of {_format_number(snapshot['composite_ml_score'])} "
+        f"and a {str(snapshot['directional_signal']).lower()} stance. The model-implied expected "
+        f"{int(snapshot['prediction_horizon_days'])}-day return is {_format_percent(snapshot['predicted_return_20d'])}, "
+        f"while the probability of a positive forward return is {_format_percent(snapshot['probability_positive_20d'])}. "
+        f"History, risk, and sentiment pillar scores are {_format_number(snapshot['history_score'])}, "
+        f"{_format_number(snapshot['risk_score'])}, and {_format_number(snapshot['sentiment_score'])} respectively."
     )
 
 

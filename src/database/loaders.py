@@ -43,9 +43,51 @@ def _execute_sql_file(session: Session, file_name: str) -> None:
         connection.exec_driver_sql(statement)
 
 
+def _ensure_table_columns(session: Session, table_name: str, expected_columns: dict[str, str]) -> None:
+    existing_columns = {
+        row["name"]
+        for row in session.execute(text(f"PRAGMA table_info({table_name})")).mappings().all()
+    }
+    for column_name, column_definition in expected_columns.items():
+        if column_name in existing_columns:
+            continue
+        session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"))
+
+
+
 def ensure_ml_tables(session: Session) -> None:
     _execute_sql_file(session, "feature_tables.sql")
     _execute_sql_file(session, "prediction_tables.sql")
+    _ensure_table_columns(
+        session,
+        "sentiment_features",
+        {
+            "source_count_7d": "INTEGER",
+            "source_sentiment_dispersion_7d": "NUMERIC(18, 8)",
+        },
+    )
+    _ensure_table_columns(
+        session,
+        "ml_predictions",
+        {
+            "selected_model_name": "TEXT",
+            "model_family": "TEXT",
+            "target_name": "TEXT",
+            "probability_positive_20d": "NUMERIC(18, 8)",
+            "composite_ml_score": "NUMERIC(18, 8)",
+            "confidence_score": "NUMERIC(18, 8)",
+            "directional_signal": "TEXT",
+            "history_score": "NUMERIC(18, 8)",
+            "risk_score": "NUMERIC(18, 8)",
+            "sentiment_score": "NUMERIC(18, 8)",
+            "history_contribution": "NUMERIC(18, 8)",
+            "risk_contribution": "NUMERIC(18, 8)",
+            "sentiment_contribution": "NUMERIC(18, 8)",
+            "pillar_weights_json": "TEXT",
+            "feature_importance_json": "TEXT",
+            "top_features_json": "TEXT",
+        },
+    )
 
 
 def get_or_create_data_source(
@@ -399,11 +441,13 @@ def load_sentiment_features(session: Session, feature_rows: pd.DataFrame | Seque
                 INSERT INTO sentiment_features (
                     asset_id, feature_date, article_count_1d, sentiment_mean_1d,
                     sentiment_mean_7d, sentiment_std_7d, negative_article_share_7d,
-                    positive_article_share_7d, article_count_7d
+                    positive_article_share_7d, article_count_7d, source_count_7d,
+                    source_sentiment_dispersion_7d
                 ) VALUES (
                     :asset_id, :feature_date, :article_count_1d, :sentiment_mean_1d,
                     :sentiment_mean_7d, :sentiment_std_7d, :negative_article_share_7d,
-                    :positive_article_share_7d, :article_count_7d
+                    :positive_article_share_7d, :article_count_7d, :source_count_7d,
+                    :source_sentiment_dispersion_7d
                 )
                 ON CONFLICT(asset_id, feature_date) DO UPDATE SET
                     article_count_1d = excluded.article_count_1d,
@@ -412,7 +456,9 @@ def load_sentiment_features(session: Session, feature_rows: pd.DataFrame | Seque
                     sentiment_std_7d = excluded.sentiment_std_7d,
                     negative_article_share_7d = excluded.negative_article_share_7d,
                     positive_article_share_7d = excluded.positive_article_share_7d,
-                    article_count_7d = excluded.article_count_7d
+                    article_count_7d = excluded.article_count_7d,
+                    source_count_7d = excluded.source_count_7d,
+                    source_sentiment_dispersion_7d = excluded.source_sentiment_dispersion_7d
                 """
             ),
             record,
@@ -466,28 +512,57 @@ def load_ml_predictions(
         record["model_run_id"] = model_run_id
         if isinstance(record.get("prediction_generated_at"), pd.Timestamp):
             record["prediction_generated_at"] = record["prediction_generated_at"].to_pydatetime()
+        for json_field in ("pillar_weights_json", "feature_importance_json", "top_features_json"):
+            if isinstance(record.get(json_field), (dict, list)):
+                record[json_field] = json.dumps(record[json_field], default=str)
         session.execute(
             text(
                 """
                 INSERT INTO ml_predictions (
                     asset_id, as_of_date, prediction_horizon_days, model_run_id,
                     regression_model_name, classification_model_name,
-                    predicted_return_20d, downside_probability_20d,
-                    predicted_negative_return_flag, prediction_generated_at
+                    selected_model_name, model_family, target_name,
+                    predicted_return_20d, downside_probability_20d, probability_positive_20d,
+                    predicted_negative_return_flag, composite_ml_score, confidence_score,
+                    directional_signal, history_score, risk_score, sentiment_score,
+                    history_contribution, risk_contribution, sentiment_contribution,
+                    pillar_weights_json, feature_importance_json, top_features_json,
+                    prediction_generated_at
                 ) VALUES (
                     :asset_id, :as_of_date, :prediction_horizon_days, :model_run_id,
                     :regression_model_name, :classification_model_name,
-                    :predicted_return_20d, :downside_probability_20d,
-                    :predicted_negative_return_flag, :prediction_generated_at
+                    :selected_model_name, :model_family, :target_name,
+                    :predicted_return_20d, :downside_probability_20d, :probability_positive_20d,
+                    :predicted_negative_return_flag, :composite_ml_score, :confidence_score,
+                    :directional_signal, :history_score, :risk_score, :sentiment_score,
+                    :history_contribution, :risk_contribution, :sentiment_contribution,
+                    :pillar_weights_json, :feature_importance_json, :top_features_json,
+                    :prediction_generated_at
                 )
                 ON CONFLICT(
                     asset_id, as_of_date, prediction_horizon_days,
                     regression_model_name, classification_model_name
                 ) DO UPDATE SET
                     model_run_id = excluded.model_run_id,
+                    selected_model_name = excluded.selected_model_name,
+                    model_family = excluded.model_family,
+                    target_name = excluded.target_name,
                     predicted_return_20d = excluded.predicted_return_20d,
                     downside_probability_20d = excluded.downside_probability_20d,
+                    probability_positive_20d = excluded.probability_positive_20d,
                     predicted_negative_return_flag = excluded.predicted_negative_return_flag,
+                    composite_ml_score = excluded.composite_ml_score,
+                    confidence_score = excluded.confidence_score,
+                    directional_signal = excluded.directional_signal,
+                    history_score = excluded.history_score,
+                    risk_score = excluded.risk_score,
+                    sentiment_score = excluded.sentiment_score,
+                    history_contribution = excluded.history_contribution,
+                    risk_contribution = excluded.risk_contribution,
+                    sentiment_contribution = excluded.sentiment_contribution,
+                    pillar_weights_json = excluded.pillar_weights_json,
+                    feature_importance_json = excluded.feature_importance_json,
+                    top_features_json = excluded.top_features_json,
                     prediction_generated_at = excluded.prediction_generated_at
                 """
             ),

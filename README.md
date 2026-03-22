@@ -100,22 +100,35 @@ The project includes forward simulation logic so the workbench can produce scena
 ### 6. News sentiment layer
 Recent news coverage is ingested, stored, and scored. This adds directional context without overcomplicating the architecture.
 
-### 7. Machine Learning Forecasting Layer
-The goal of this component is to enhance the platform’s decision-support capabilities by providing probabilistic estimates that feed into risk analysis and simulation workflows using information from both API's.
+### 7. Machine Learning Signal Calibration Layer
+The ML subsystem is framed as a dynamic weighting engine rather than a toy price predictor. It combines three explicit research pillars:
 
-The model uses structured historical market data and aggregated news sentiment features to estimate the following:
+- history / technical / market-structure signals
+- risk / downside / scenario signals
+- sentiment / external-information signals
 
-- expected forward return over a fixed time period
-- probability of negative return over the same period
-- optional volatility or uncertainty
+The model target is forward 20-trading-day return rather than raw price level. That choice is more finance-oriented because returns are comparable across assets, less dominated by nominal price scale, and more aligned with decision-support workflows.
 
-The ML aspect uses the past steps to strengthen the project as a whole.
+The workflow is intentionally structured:
 
-- predictions are written to SQL tables alongside historical data
-- forecasts can be used to inform simulation inputs
-- results are incorporated into the PDF report as a “Model-Informed Forecast & Risk Outlook” section
+- raw market and sentiment data are ingested and stored in SQL
+- engineered features are built into history, risk, and sentiment pillars
+- standardized `history_score`, `risk_score`, and `sentiment_score` are created before model training
+- a ridge-based weighting engine learns an interpretable baseline allocation across signals
+- a random-forest challenger model is trained as a nonlinear comparison benchmark
+- outputs are evaluated with time-aware train/test splits and expanding-window validation
+- scored results are written back to SQL for reuse by the app and the PDF report
 
-This design allows the model to function as a supporting signal within a broader risk and decision-support framework, rather than replacing traditional financial analysis.
+The app and report expose:
+
+- composite ML score
+- directional signal
+- confidence indicator
+- pillar contribution breakdown
+- learned pillar weights
+- top feature importance
+
+This keeps the ML layer grounded as an investment-research support tool rather than a black-box trading bot.
 
 ### 8. Multi-page PDF briefing
 The reporting layer generates a formal PDF-style asset briefing with:
@@ -143,3 +156,18 @@ asset-intelligence-workbench/
 ├── tests/              # Focused unit tests
 ├── requirements.txt
 └── README.md
+
+
+## Running the ML layer locally
+
+1. Activate the project environment.
+2. Start the app with `streamlit run app\streamlit_app.py`.
+3. Load or ingest a ticker with enough historical data.
+4. Open the `Machine Learning Signal Calibration` section in the app.
+5. Generate a PDF report to include the ML signal page in the briefing.
+
+Focused verification commands:
+
+```bash
+python -m unittest tests.test_features tests.test_ml_models tests.test_ml_integration tests.test_app_data
+```
