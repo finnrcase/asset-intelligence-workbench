@@ -5,6 +5,7 @@ Bootstrap workflow for first-pass news sentiment ingestion.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from src.ingestion.sentiment_data import NewsSentimentProvider
 STARTER_SENTIMENT_UNIVERSE = ["AAPL", "MSFT", "SPY", "QQQ", "BTC-USD"]
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = PROJECT_ROOT / "sql" / "schema.sql"
+LOGGER = logging.getLogger(__name__)
 
 
 def resolve_sentiment_universe(
@@ -47,10 +49,23 @@ def ingest_asset_news_sentiment(
         metadata = get_asset_metadata(session, asset["ticker"])
 
     company_name = metadata["asset_name"] if metadata else asset["asset_name"]
+    LOGGER.info(
+        "Sentiment live fetch start: normalized_ticker=%s provider_selected=%s company_name=%s live_fetch_attempted=true page_size=%s",
+        asset["ticker"],
+        provider.source_name,
+        company_name,
+        page_size,
+    )
     articles = provider.fetch_recent_articles(
         ticker=asset["ticker"],
         company_name=company_name,
         page_size=page_size,
+    )
+    LOGGER.info(
+        "Sentiment provider fetch complete: normalized_ticker=%s provider_selected=%s rows_fetched=%s",
+        asset["ticker"],
+        provider.source_name,
+        len(articles),
     )
     article_rows = [article.as_dict() for article in articles]
 
@@ -62,6 +77,12 @@ def ingest_asset_news_sentiment(
             source_name=provider.source_name,
             source_type=provider.source_type,
             source_url=provider.source_url,
+        )
+        LOGGER.info(
+            "Sentiment DB write complete: normalized_ticker=%s provider_selected=%s rows_written=%s",
+            asset["ticker"],
+            provider.source_name,
+            len(persisted),
         )
 
     return {

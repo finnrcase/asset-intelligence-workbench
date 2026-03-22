@@ -8,6 +8,7 @@ calculation.
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from typing import Any
 from uuid import uuid4
@@ -28,6 +29,7 @@ DEFAULT_ML_PREDICTION_HISTORY = 60
 
 
 MARKET_DATA_SERVICE = MarketDataIngestionService()
+LOGGER = logging.getLogger(__name__)
 
 
 def load_available_tickers() -> list[dict[str, Any]]:
@@ -203,14 +205,52 @@ def get_recent_price_table(frame: pd.DataFrame, rows: int = 10) -> pd.DataFrame:
 def load_recent_news_articles(ticker: str, limit: int = 10) -> list[dict[str, Any]]:
     """Return recent stored news sentiment rows for a selected ticker."""
 
+    normalized_ticker = normalize_app_ticker(ticker)
+    initialize_database()
+
     with session_scope() as session:
         get_recent_news = getattr(database_queries, "get_recent_news_sentiment", None)
         if get_recent_news is None:
+            LOGGER.info(
+                "Sentiment DB read skipped: normalized_ticker=%s lookback_window=limit:%s reason=query_helper_missing",
+                normalized_ticker,
+                limit,
+            )
             return []
         try:
-            return get_recent_news(session, ticker=ticker, limit=limit)
-        except OperationalError:
-            return []
+            rows = get_recent_news(session, ticker=normalized_ticker, limit=limit)
+            LOGGER.info(
+                "Sentiment DB read: normalized_ticker=%s lookback_window=limit:%s rows_found=%s",
+                normalized_ticker,
+                limit,
+                len(rows),
+            )
+            return rows
+        except OperationalError as exc:
+            LOGGER.warning(
+                "Sentiment DB read failed for %s with lookback_window=limit:%s. Retrying after schema initialization. detail=%s",
+                normalized_ticker,
+                limit,
+                exc,
+            )
+            initialize_database()
+            try:
+                rows = get_recent_news(session, ticker=normalized_ticker, limit=limit)
+                LOGGER.info(
+                    "Sentiment DB read retry succeeded: normalized_ticker=%s lookback_window=limit:%s rows_found=%s",
+                    normalized_ticker,
+                    limit,
+                    len(rows),
+                )
+                return rows
+            except OperationalError as retry_exc:
+                LOGGER.error(
+                    "Sentiment DB read retry failed for %s with lookback_window=limit:%s detail=%s",
+                    normalized_ticker,
+                    limit,
+                    retry_exc,
+                )
+                return []
 
 
 def load_latest_ml_forecast(ticker: str) -> dict[str, Any] | None:
@@ -1032,6 +1072,11 @@ def _is_missing_gnews_configuration(detail: str) -> bool:
     return "gnews_api_key" in normalized and "required" in normalized
 
 
+def _is_missing_local_asset(detail: str) -> bool:
+    normalized = detail.lower()
+    return "must exist in the local asset universe before sentiment can be loaded" in normalized
+
+
 
 def _build_sentiment_unavailable_status(
     ticker: str,
@@ -1103,7 +1148,7 @@ def ensure_sentiment_for_ticker(
             normalized_ticker,
             _gnews_api_key_configured(),
         )
-        return {
+        result = {
             "success": True,
             "ticker": normalized_ticker,
             "status": "cached_sentiment_loaded",
@@ -1116,6 +1161,8 @@ def ensure_sentiment_for_ticker(
             "provider_used": "cache",
             "used_cache": True,
         }
+        logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+        return result
 
     provider_diagnostics = _sentiment_provider_diagnostics()
     logger.info(
@@ -1137,7 +1184,7 @@ def ensure_sentiment_for_ticker(
             bool(stored_rows),
         )
         if stored_rows:
-            return _build_sentiment_unavailable_status(
+            result = _build_sentiment_unavailable_status(
                 ticker=normalized_ticker,
                 article_count=len(stored_rows),
                 status="cached_sentiment_loaded",
@@ -1148,7 +1195,9 @@ def ensure_sentiment_for_ticker(
                 message="Live news sentiment unavailable; showing cached sentiment.",
                 reason="news sentiment provider not configured",
             )
-        return _build_sentiment_unavailable_status(
+            logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+            return result
+        result = _build_sentiment_unavailable_status(
             ticker=normalized_ticker,
             article_count=0,
             status="sentiment_unavailable_provider_not_configured",
@@ -1162,13 +1211,15 @@ def ensure_sentiment_for_ticker(
             ),
             reason="GNEWS_API_KEY not configured" if not provider_diagnostics["availability"].get("gnews") else "news sentiment provider not configured",
         )
+        logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+        return result
 
     try:
         from src.ingestion.bootstrap_sentiment import ingest_sentiment_for_ticker
     except Exception as exc:
         detail = str(exc)
         if "401" in detail or "invalid api key" in detail.lower() or "unauthorized" in detail.lower():
-            return {
+            result = {
                 "success": False,
                 "ticker": normalized_ticker,
                 "status": "sentiment_unavailable_provider_failed",
@@ -1182,7 +1233,9 @@ def ensure_sentiment_for_ticker(
                 "used_cache": False,
                 "sentiment_unavailable_reason": "provider credentials rejected",
             }
-        return {
+            logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+            return result
+        result = {
             "success": False,
             "ticker": normalized_ticker,
             "status": "ingestion_import_error",
@@ -1195,6 +1248,8 @@ def ensure_sentiment_for_ticker(
             "provider_used": provider_diagnostics["selected_provider"],
             "used_cache": False,
         }
+        logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+        return result
 
     initialize_database()
 
@@ -1216,7 +1271,7 @@ def ensure_sentiment_for_ticker(
         )
         if _is_missing_gnews_configuration(detail):
             if stored_rows:
-                return _build_sentiment_unavailable_status(
+                result = _build_sentiment_unavailable_status(
                     ticker=normalized_ticker,
                     article_count=len(stored_rows),
                     status="cached_sentiment_loaded",
@@ -1227,7 +1282,9 @@ def ensure_sentiment_for_ticker(
                     message="Live news sentiment unavailable; showing cached sentiment.",
                     reason="GNEWS_API_KEY not configured",
                 )
-            return _build_sentiment_unavailable_status(
+                logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+                return result
+            result = _build_sentiment_unavailable_status(
                 ticker=normalized_ticker,
                 article_count=0,
                 status="sentiment_unavailable_provider_not_configured",
@@ -1241,9 +1298,32 @@ def ensure_sentiment_for_ticker(
                 ),
                 reason="GNEWS_API_KEY not configured",
             )
+            logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+            return result
+        if _is_missing_local_asset(detail):
+            result = {
+                "success": False,
+                "ticker": normalized_ticker,
+                "status": "sentiment_unavailable_invalid_ticker",
+                "message": (
+                    f"News sentiment is currently unavailable because {normalized_ticker} is not yet stored in the local asset universe."
+                ),
+                "ui_message": (
+                    f"News sentiment is currently unavailable because {normalized_ticker} is not yet stored in the local asset universe."
+                ),
+                "debug_message": detail,
+                "fetched": False,
+                "article_count": len(stored_rows),
+                "sentiment_records_count": len(stored_rows),
+                "provider_used": provider_diagnostics["selected_provider"],
+                "used_cache": False,
+                "sentiment_unavailable_reason": "ticker not stored in local asset universe",
+            }
+            logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+            return result
         if "no configured news sentiment provider is available" in detail.lower():
             if stored_rows:
-                return _build_sentiment_unavailable_status(
+                result = _build_sentiment_unavailable_status(
                     ticker=normalized_ticker,
                     article_count=len(stored_rows),
                     status="cached_sentiment_loaded",
@@ -1254,7 +1334,9 @@ def ensure_sentiment_for_ticker(
                     message="Live news sentiment unavailable; showing cached sentiment.",
                     reason="news sentiment provider not configured",
                 )
-            return _build_sentiment_unavailable_status(
+                logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+                return result
+            result = _build_sentiment_unavailable_status(
                 ticker=normalized_ticker,
                 article_count=0,
                 status="sentiment_unavailable_provider_not_configured",
@@ -1268,7 +1350,9 @@ def ensure_sentiment_for_ticker(
                 ),
                 reason="news sentiment provider not configured",
             )
-        return {
+            logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+            return result
+        result = {
             "success": False,
             "ticker": normalized_ticker,
             "status": "sentiment_unavailable_provider_failed",
@@ -1282,6 +1366,8 @@ def ensure_sentiment_for_ticker(
             "used_cache": False,
             "sentiment_unavailable_reason": "sentiment provider request failed",
         }
+        logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+        return result
 
     if summary.get("articles_loaded", 0) <= 0:
         logger.info(
@@ -1291,7 +1377,7 @@ def ensure_sentiment_for_ticker(
             provider_diagnostics["availability"].get("gnews"),
             provider_diagnostics["fallback_provider_used"],
         )
-        return {
+        result = {
             "success": False,
             "ticker": normalized_ticker,
             "status": "sentiment_unavailable_no_cache",
@@ -1305,6 +1391,8 @@ def ensure_sentiment_for_ticker(
             "used_cache": False,
             "sentiment_unavailable_reason": "no recent sentiment records stored for this asset",
         }
+        logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+        return result
 
     logger.info(
         "Sentiment live fetch completed for %s: selected_provider=%s gnews_detected=%s cached_sentiment_used=false fallback_provider_used=%s records_loaded=%s",
@@ -1314,7 +1402,14 @@ def ensure_sentiment_for_ticker(
         provider_diagnostics["fallback_provider_used"],
         summary["articles_loaded"],
     )
-    return {
+    readback_rows = load_recent_news_articles(normalized_ticker, limit=page_size)
+    logger.info(
+        "Sentiment post-write readback: normalized_ticker=%s rows_found=%s lookback_window=limit:%s",
+        normalized_ticker,
+        len(readback_rows),
+        page_size,
+    )
+    result = {
         "success": True,
         "ticker": normalized_ticker,
         "status": "live_sentiment_loaded",
@@ -1330,6 +1425,8 @@ def ensure_sentiment_for_ticker(
         "provider_used": summary.get("provider"),
         "used_cache": False,
     }
+    logger.info("Sentiment final status for %s: %s", normalized_ticker, result)
+    return result
 
 
 
