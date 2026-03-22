@@ -52,7 +52,7 @@ class AppDataTests(unittest.TestCase):
             yield object()
 
         with patch("src.utils.app_data.session_scope", fake_session_scope):
-            with patch("src.utils.app_data.reset_database_engine") as mock_reset:
+            with patch("src.utils.app_data._reset_database_engine_if_available") as mock_reset:
                 with patch("src.database.loaders.upsert_asset_metadata", return_value=[]):
                     with patch("src.database.loaders.load_historical_prices", return_value=[]):
                         app_data._write_market_data_to_database(

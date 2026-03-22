@@ -16,7 +16,6 @@ import pandas as pd
 from sqlalchemy.exc import OperationalError
 
 from src.database.connection import initialize_database
-from src.database.connection import reset_database_engine
 from src.database.connection import session_scope
 from src.database import queries as database_queries
 
@@ -54,6 +53,19 @@ def _is_sqlite_readonly_error(exc: Exception) -> bool:
 
     detail = str(exc).lower()
     return "readonly database" in detail or "attempt to write a readonly database" in detail
+
+
+def _reset_database_engine_if_available() -> None:
+    """Best-effort engine reset for deployments where the helper is available."""
+
+    try:
+        from src.database import connection as database_connection
+    except Exception:
+        return
+
+    reset_database_engine = getattr(database_connection, "reset_database_engine", None)
+    if callable(reset_database_engine):
+        reset_database_engine()
 
 
 def load_available_tickers() -> list[dict[str, Any]]:
@@ -248,12 +260,12 @@ def _write_market_data_to_database(
             return
         except OperationalError as exc:
             if attempt == 0 and _is_sqlite_readonly_error(exc):
-                reset_database_engine()
+                _reset_database_engine_if_available()
                 continue
             raise
         except Exception as exc:
             if attempt == 0 and _is_sqlite_readonly_error(exc):
-                reset_database_engine()
+                _reset_database_engine_if_available()
                 continue
             raise
 
