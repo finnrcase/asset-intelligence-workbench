@@ -6,14 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.data.ingestion.service import MarketDataIngestionService
 from src.database.connection import initialize_database
-from src.database.connection import session_scope
-from src.database.loaders import load_historical_prices
-from src.database.loaders import upsert_asset_metadata
-from src.ingestion.market_data import YFINANCE_SOURCE_NAME
-from src.ingestion.market_data import YFINANCE_SOURCE_TYPE
-from src.ingestion.market_data import YFINANCE_SOURCE_URL
-from src.ingestion.market_data import YFinanceMarketDataClient
 
 
 DEFAULT_STARTER_UNIVERSE = ["AAPL", "MSFT", "SPY", "QQQ", "BTC-USD"]
@@ -33,38 +27,17 @@ def bootstrap_market_data_ingestion(
     """
 
     initialize_database(schema_path=SCHEMA_PATH)
-    client = YFinanceMarketDataClient()
+    service = MarketDataIngestionService()
     universe = tickers or DEFAULT_STARTER_UNIVERSE
 
     assets_loaded = 0
     price_rows_loaded = 0
 
-    with session_scope() as session:
-        for ticker in universe:
-            metadata = client.fetch_asset_metadata(ticker).as_dict()
-            price_rows = client.fetch_normalized_price_rows(
-                ticker=ticker,
-                lookback_days=lookback_days,
-            )
-
-            upsert_asset_metadata(
-                session=session,
-                assets=[metadata],
-                source_name=YFINANCE_SOURCE_NAME,
-                source_type=YFINANCE_SOURCE_TYPE,
-                source_url=YFINANCE_SOURCE_URL,
-            )
-            load_historical_prices(
-                session=session,
-                ticker=metadata["ticker"],
-                price_rows=price_rows,
-                source_name=YFINANCE_SOURCE_NAME,
-                source_type=YFINANCE_SOURCE_TYPE,
-                source_url=YFINANCE_SOURCE_URL,
-            )
-
+    for ticker in universe:
+        result = service.ingest_ticker(ticker, lookback_days=lookback_days)
+        if result.success:
             assets_loaded += 1
-            price_rows_loaded += len(price_rows)
+            price_rows_loaded += result.records_written
 
     summary = {
         "tickers_processed": len(universe),
@@ -89,4 +62,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

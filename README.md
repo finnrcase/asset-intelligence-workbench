@@ -13,9 +13,25 @@ https://asset-intelligence-workbench-eq2zbxelprxwjnnxendyqp.streamlit.app/
 The local development SQLite database lives at `data/app.db` by default.
 
 - Override it with `SQLITE_DB_PATH` when needed.
+- Configure market-data freshness with `MARKET_DATA_METADATA_FRESHNESS_HOURS` and `MARKET_DATA_PRICES_FRESHNESS_HOURS`.
 - The app resolves relative SQLite paths against the repository root, not the current working directory.
 - The app validates the resolved SQLite path on startup and logs the fully resolved absolute path.
 - Startup fails early if the parent directory is not writable, the database file cannot be created, or SQLite cannot open the file for writes.
+
+### Market Data Architecture
+
+The market-data path is now separated into a small storage-backed pipeline:
+
+- provider layer: `src/data/providers/market_data_provider.py`
+- ingestion service: `src/data/ingestion/service.py`
+- SQL repository: `src/data/storage/repository.py`
+- SQL query interface for app/report reads: `src/data/queries/market_data_queries.py`
+
+The intended flow is:
+
+`API -> normalize -> persist to SQL -> query from SQL -> analytics/reporting/app`
+
+The app and reporting layers should read market data from SQL through the query/repository layer rather than calling the provider directly.
 
 ### Resetting the local database safely
 

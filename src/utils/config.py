@@ -247,6 +247,8 @@ class AppConfig:
     database_url: str
     sqlalchemy_echo: bool
     sqlite_path: Path
+    market_data_metadata_freshness_hours: int
+    market_data_prices_freshness_hours: int
     gnews_api_key: str | None
     finnhub_api_key: str | None
     newsapi_api_key: str | None
@@ -271,6 +273,8 @@ def get_config() -> AppConfig:
         else _build_default_database_url(sqlite_path)
     )
     sqlalchemy_echo = os.getenv("SQLALCHEMY_ECHO", "false").strip().lower() == "true"
+    metadata_freshness_hours = int(os.getenv("MARKET_DATA_METADATA_FRESHNESS_HOURS", "24"))
+    prices_freshness_hours = int(os.getenv("MARKET_DATA_PRICES_FRESHNESS_HOURS", "6"))
 
     if database_url.startswith("sqlite"):
         log_sqlite_startup_diagnostics(database_url)
@@ -284,6 +288,8 @@ def get_config() -> AppConfig:
         database_url=database_url,
         sqlalchemy_echo=sqlalchemy_echo,
         sqlite_path=sqlite_path,
+        market_data_metadata_freshness_hours=metadata_freshness_hours,
+        market_data_prices_freshness_hours=prices_freshness_hours,
         gnews_api_key=os.getenv("GNEWS_API_KEY"),
         finnhub_api_key=os.getenv("FINNHUB_API_KEY"),
         newsapi_api_key=os.getenv("NEWSAPI_API_KEY") or os.getenv("NEWS_API_KEY"),

@@ -44,6 +44,41 @@ CREATE TABLE IF NOT EXISTS historical_prices (
     CONSTRAINT uq_historical_prices_asset_source_date UNIQUE (asset_id, source_id, price_date)
 );
 
+CREATE TABLE IF NOT EXISTS market_data_ingestion_state (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    provider_name TEXT NOT NULL,
+    asset_type TEXT,
+    request_timestamp TIMESTAMP,
+    last_successful_fetch_at TIMESTAMP,
+    fetch_status TEXT NOT NULL DEFAULT 'never_fetched',
+    error_message TEXT,
+    record_count_fetched INTEGER,
+    coverage_start_date DATE,
+    coverage_end_date DATE,
+    metadata_fetched_at TIMESTAMP,
+    prices_fetched_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_market_data_ingestion_state_ticker_provider UNIQUE (ticker, provider_name)
+);
+
+CREATE TABLE IF NOT EXISTS ingestion_run_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    provider_name TEXT NOT NULL,
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP,
+    fetch_status TEXT NOT NULL,
+    error_message TEXT,
+    cache_status TEXT,
+    record_count_fetched INTEGER,
+    records_written INTEGER,
+    coverage_start_date DATE,
+    coverage_end_date DATE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS news_articles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     asset_id INTEGER NOT NULL,
@@ -73,6 +108,10 @@ CREATE INDEX IF NOT EXISTS ix_historical_prices_date
     ON historical_prices (price_date);
 CREATE INDEX IF NOT EXISTS ix_historical_prices_source_date
     ON historical_prices (source_id, price_date);
+CREATE INDEX IF NOT EXISTS ix_market_data_ingestion_state_ticker
+    ON market_data_ingestion_state (ticker, provider_name);
+CREATE INDEX IF NOT EXISTS ix_ingestion_run_logs_ticker_started_at
+    ON ingestion_run_logs (ticker, started_at);
 CREATE INDEX IF NOT EXISTS ix_news_articles_asset_published_at
     ON news_articles (asset_id, published_at);
 CREATE INDEX IF NOT EXISTS ix_news_articles_source_published_at

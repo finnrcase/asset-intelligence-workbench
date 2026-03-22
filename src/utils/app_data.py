@@ -13,11 +13,11 @@ from typing import Any
 from uuid import uuid4
 
 import pandas as pd
-from sqlalchemy.exc import OperationalError
-
 from src.database.connection import initialize_database
-from src.database.connection import session_scope
 from src.database import queries as database_queries
+from src.database.connection import session_scope
+from src.data.ingestion.service import MarketDataIngestionService
+from src.data.queries import market_data_queries
 
 
 DEFAULT_LOOKBACK_DAYS = 365
@@ -26,53 +26,13 @@ DEFAULT_SENTIMENT_FRESHNESS_HOURS = 24
 DEFAULT_ML_PREDICTION_HISTORY = 60
 
 
-def _classify_market_data_provider_error(exc: Exception) -> tuple[str, str]:
-    """Map provider exceptions into stable app statuses and user-facing messages."""
-
-    detail = str(exc).strip() or exc.__class__.__name__
-    normalized_detail = detail.lower()
-
-    if any(
-        token in normalized_detail
-        for token in ("too many requests", "rate limited", "429")
-    ):
-        return (
-            "rate_limited",
-            "Yahoo market data is temporarily rate limited for this ticker. "
-            "Please wait a minute and try again.",
-        )
-
-    return (
-        "provider_error",
-        f"Unable to resolve or download market data for the ticker. Provider detail: {detail}",
-    )
-
-
-def _is_sqlite_readonly_error(exc: Exception) -> bool:
-    """Return True when an exception corresponds to SQLite readonly write failures."""
-
-    detail = str(exc).lower()
-    return "readonly database" in detail or "attempt to write a readonly database" in detail
-
-
-def _reset_database_engine_if_available() -> None:
-    """Best-effort engine reset for deployments where the helper is available."""
-
-    try:
-        from src.database import connection as database_connection
-    except Exception:
-        return
-
-    reset_database_engine = getattr(database_connection, "reset_database_engine", None)
-    if callable(reset_database_engine):
-        reset_database_engine()
+MARKET_DATA_SERVICE = MarketDataIngestionService()
 
 
 def load_available_tickers() -> list[dict[str, Any]]:
     """Return the available asset universe for app selection controls."""
 
-    with session_scope() as session:
-        assets = database_queries.get_asset_list(session, active_only=True)
+    assets = market_data_queries.list_available_assets()
 
     return [
         {
@@ -90,15 +50,13 @@ def load_available_tickers() -> list[dict[str, Any]]:
 def load_asset_metadata(ticker: str) -> dict[str, Any] | None:
     """Return detailed metadata for a selected ticker."""
 
-    with session_scope() as session:
-        return database_queries.get_asset_metadata(session, ticker)
+    return market_data_queries.get_asset_metadata(ticker)
 
 
 def load_price_history(ticker: str) -> list[dict[str, Any]]:
     """Return stored historical price rows for a selected ticker."""
 
-    with session_scope() as session:
-        return database_queries.get_price_history(session, ticker)
+    return market_data_queries.get_price_history(ticker)
 
 
 def normalize_app_ticker(ticker: str) -> str:
@@ -138,136 +96,16 @@ def ingest_single_ticker(
             "message": "Enter a ticker symbol before attempting to load an asset.",
         }
 
-    initialize_database()
-
-    existing_metadata = load_asset_metadata(normalized_ticker)
-    existing_prices = load_price_history(normalized_ticker)
-    if existing_metadata is not None and existing_prices:
-        return {
-            "success": True,
-            "ticker": normalized_ticker,
-            "status": "database",
-            "message": f"{normalized_ticker} was loaded from the local database.",
-        }
-
-    try:
-        from src.database.loaders import load_historical_prices
-        from src.database.loaders import upsert_asset_metadata
-        from src.ingestion.market_data import YFINANCE_SOURCE_NAME
-        from src.ingestion.market_data import YFINANCE_SOURCE_TYPE
-        from src.ingestion.market_data import YFINANCE_SOURCE_URL
-        from src.ingestion.market_data import YFinanceMarketDataClient
-    except Exception as exc:
-        return {
-            "success": False,
-            "ticker": normalized_ticker,
-            "status": "ingestion_import_error",
-            "message": (
-                "The on-demand ingestion components could not be loaded. "
-                f"Import detail: {exc}"
-            ),
-        }
-
-    client = YFinanceMarketDataClient()
-
-    try:
-        metadata = client.fetch_asset_metadata(normalized_ticker).as_dict()
-        price_rows = client.fetch_normalized_price_rows(
-            normalized_ticker,
-            lookback_days=lookback_days,
-        )
-    except Exception as exc:
-        error_status, error_message = _classify_market_data_provider_error(exc)
-        return {
-            "success": False,
-            "ticker": normalized_ticker,
-            "status": error_status,
-            "message": f"{error_message} Ticker: {normalized_ticker}.",
-        }
-
-    if not metadata.get("asset_name"):
-        return {
-            "success": False,
-            "ticker": normalized_ticker,
-            "status": "missing_metadata",
-            "message": f"{normalized_ticker} did not return usable asset metadata.",
-        }
-
-    if not price_rows:
-        return {
-            "success": False,
-            "ticker": normalized_ticker,
-            "status": "missing_prices",
-            "message": f"{normalized_ticker} did not return daily historical price data.",
-        }
-
-    try:
-        _write_market_data_to_database(
-            ticker=normalized_ticker,
-            metadata=metadata,
-            price_rows=price_rows,
-            source_name=YFINANCE_SOURCE_NAME,
-            source_type=YFINANCE_SOURCE_TYPE,
-            source_url=YFINANCE_SOURCE_URL,
-        )
-    except Exception as exc:
-        return {
-            "success": False,
-            "ticker": normalized_ticker,
-            "status": "ingestion_error",
-            "message": f"Failed to write {normalized_ticker} into the local database. Detail: {exc}",
-        }
-
+    result = MARKET_DATA_SERVICE.ingest_ticker(
+        ticker=normalized_ticker,
+        lookback_days=lookback_days,
+    )
     return {
-        "success": True,
-        "ticker": normalized_ticker,
-        "status": "ingested",
-        "message": f"{normalized_ticker} was fetched from the provider and added to the local database.",
+        "success": result.success,
+        "ticker": result.ticker,
+        "status": result.status,
+        "message": result.message,
     }
-
-
-def _write_market_data_to_database(
-    ticker: str,
-    metadata: dict[str, Any],
-    price_rows: list[dict[str, Any]],
-    source_name: str,
-    source_type: str,
-    source_url: str,
-) -> None:
-    """Persist market data, retrying once if the current SQLite engine goes readonly."""
-
-    from src.database.loaders import load_historical_prices
-    from src.database.loaders import upsert_asset_metadata
-
-    for attempt in range(2):
-        try:
-            with session_scope() as session:
-                upsert_asset_metadata(
-                    session=session,
-                    assets=[metadata],
-                    source_name=source_name,
-                    source_type=source_type,
-                    source_url=source_url,
-                )
-                load_historical_prices(
-                    session=session,
-                    ticker=ticker,
-                    price_rows=price_rows,
-                    source_name=source_name,
-                    source_type=source_type,
-                    source_url=source_url,
-                )
-            return
-        except OperationalError as exc:
-            if attempt == 0 and _is_sqlite_readonly_error(exc):
-                _reset_database_engine_if_available()
-                continue
-            raise
-        except Exception as exc:
-            if attempt == 0 and _is_sqlite_readonly_error(exc):
-                _reset_database_engine_if_available()
-                continue
-            raise
 
 
 def resolve_asset_for_app(

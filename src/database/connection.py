@@ -149,6 +149,64 @@ class HistoricalPrice(Base):
     )
 
 
+class MarketDataIngestionState(Base):
+    """Per-ticker/provider ingestion state used for cache freshness and diagnostics."""
+
+    __tablename__ = "market_data_ingestion_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    asset_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    request_timestamp: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_successful_fetch_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    fetch_status: Mapped[str] = mapped_column(String(32), nullable=False, default="never_fetched")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    record_count_fetched: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    coverage_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    coverage_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    metadata_fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    prices_fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "ticker",
+            "provider_name",
+            name="uq_market_data_ingestion_state_ticker_provider",
+        ),
+    )
+
+
+class IngestionRunLog(Base):
+    """Audit record for every market-data ingestion attempt."""
+
+    __tablename__ = "ingestion_run_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    fetch_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cache_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    record_count_fetched: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    records_written: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    coverage_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    coverage_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+
+
 def _enable_sqlite_foreign_keys(engine: Engine, config: AppConfig) -> None:
     """Enable SQLite foreign key enforcement on every new connection."""
 
