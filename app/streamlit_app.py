@@ -5,12 +5,14 @@ Streamlit application for the first-pass Asset Intelligence Workbench UI.
 from __future__ import annotations
 
 import importlib
+import logging
 import math
 import traceback
 import sys
 from pathlib import Path
 
 import streamlit as st
+import sqlalchemy
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -71,6 +73,43 @@ VAR_CONFIDENCE_LEVEL = 0.95
 DEFAULT_FORECAST_HORIZON = 63
 DEFAULT_SIMULATION_COUNT = 500
 DEFAULT_SENTIMENT_PAGE_SIZE = 12
+DEPLOY_MARKER = "asset-intelligence-workbench-build-2026-03-22-A"
+LOGGER = logging.getLogger(__name__)
+
+
+def _log_startup_deploy_diagnostics() -> None:
+    """Log a lightweight deployment consistency snapshot for Streamlit startup."""
+
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO)
+
+    LOGGER.info("DEPLOY_MARKER=%s", DEPLOY_MARKER)
+    LOGGER.info("SQLALCHEMY_VERSION=%s", sqlalchemy.__version__)
+
+    try:
+        import src.database.connection as connection_module
+
+        LOGGER.info("CONNECTION_MODULE_PATH=%s", Path(connection_module.__file__).resolve())
+        connection_model_names = sorted(
+            name
+            for name in ("Base", "DataSource", "Asset", "HistoricalPrice", "MarketDataIngestionState", "IngestionRunLog")
+            if hasattr(connection_module, name)
+        )
+        LOGGER.info("CONNECTION_ORM_MODELS=%s", connection_model_names)
+
+        ingestion_state = getattr(connection_module, "MarketDataIngestionState", None)
+        LOGGER.info("INGESTION_STATE_IMPORTED_FROM_EXPECTED_MODULE=%s", ingestion_state is not None)
+        LOGGER.info("INGESTION_STATE_REPR=%r", ingestion_state)
+        LOGGER.info("INGESTION_STATE_TYPE=%s", type(ingestion_state))
+    except Exception as exc:
+        LOGGER.exception("DEPLOY_DIAGNOSTIC_CONNECTION_ERROR=%s", exc)
+
+    try:
+        import src.data.storage.repository as repository_module
+
+        LOGGER.info("REPOSITORY_MODULE_PATH=%s", Path(repository_module.__file__).resolve())
+    except Exception as exc:
+        LOGGER.exception("DEPLOY_DIAGNOSTIC_REPOSITORY_ERROR=%s", exc)
 
 
 def _format_percent(value: float) -> str:
@@ -251,6 +290,8 @@ def _load_pdf_report_module():
 
 def main() -> None:
     """Run the first-pass Streamlit dashboard."""
+
+    _log_startup_deploy_diagnostics()
 
     st.set_page_config(
         page_title="Asset Intelligence Workbench",
