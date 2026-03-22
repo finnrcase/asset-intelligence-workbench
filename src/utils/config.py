@@ -9,6 +9,7 @@ settings.
 from __future__ import annotations
 
 import os
+import sqlite3
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -32,8 +33,23 @@ def _is_path_writable(path: Path) -> bool:
     """Return True when the SQLite file path can be written by the current process."""
 
     if path.exists():
-        return os.access(path, os.W_OK)
+        return _can_write_existing_sqlite_file(path)
     return os.access(path.parent, os.W_OK)
+
+
+def _can_write_existing_sqlite_file(path: Path) -> bool:
+    """Return True when SQLite can start a write transaction against the file."""
+
+    try:
+        connection = sqlite3.connect(path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.rollback()
+            return True
+        finally:
+            connection.close()
+    except Exception:
+        return False
 
 
 def _fallback_sqlite_path() -> Path:

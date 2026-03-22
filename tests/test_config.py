@@ -45,6 +45,23 @@ class ConfigTests(unittest.TestCase):
                     path.rmdir()
             temp_root.rmdir()
 
+    def test_existing_sqlite_file_that_fails_write_probe_is_treated_as_not_writable(self) -> None:
+        temp_root = TEST_ROOT / f"config_{uuid4().hex}"
+        temp_root.mkdir(parents=True, exist_ok=True)
+        db_path = temp_root / "seed.db"
+
+        try:
+            db_path.write_text("seed-db", encoding="utf-8")
+            with patch("src.utils.config.sqlite3.connect", side_effect=OSError("readonly")):
+                self.assertFalse(config._is_path_writable(db_path))
+        finally:
+            for path in sorted(temp_root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            temp_root.rmdir()
+
 
 if __name__ == "__main__":
     unittest.main()
