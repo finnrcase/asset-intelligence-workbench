@@ -192,6 +192,8 @@ def _render_status_message(status: dict[str, str] | None) -> None:
         st.info(message)
     elif status_type in {"ingested"}:
         st.success(message)
+    elif status_type in {"rate_limited"}:
+        st.warning(message)
     else:
         st.error(message)
 

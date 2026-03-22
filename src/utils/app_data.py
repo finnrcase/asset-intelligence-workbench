@@ -26,6 +26,28 @@ DEFAULT_SENTIMENT_FRESHNESS_HOURS = 24
 DEFAULT_ML_PREDICTION_HISTORY = 60
 
 
+def _classify_market_data_provider_error(exc: Exception) -> tuple[str, str]:
+    """Map provider exceptions into stable app statuses and user-facing messages."""
+
+    detail = str(exc).strip() or exc.__class__.__name__
+    normalized_detail = detail.lower()
+
+    if any(
+        token in normalized_detail
+        for token in ("too many requests", "rate limited", "429")
+    ):
+        return (
+            "rate_limited",
+            "Yahoo market data is temporarily rate limited for this ticker. "
+            "Please wait a minute and try again.",
+        )
+
+    return (
+        "provider_error",
+        f"Unable to resolve or download market data for the ticker. Provider detail: {detail}",
+    )
+
+
 def load_available_tickers() -> list[dict[str, Any]]:
     """Return the available asset universe for app selection controls."""
 
@@ -135,14 +157,12 @@ def ingest_single_ticker(
             lookback_days=lookback_days,
         )
     except Exception as exc:
+        error_status, error_message = _classify_market_data_provider_error(exc)
         return {
             "success": False,
             "ticker": normalized_ticker,
-            "status": "provider_error",
-            "message": (
-                f"Unable to resolve or download market data for {normalized_ticker}. "
-                f"Provider detail: {exc}"
-            ),
+            "status": error_status,
+            "message": f"{error_message} Ticker: {normalized_ticker}.",
         }
 
     if not metadata.get("asset_name"):
