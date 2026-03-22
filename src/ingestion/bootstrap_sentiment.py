@@ -13,7 +13,7 @@ from src.database.connection import session_scope
 from src.database.loaders import load_news_articles
 from src.database.queries import get_asset_list
 from src.database.queries import get_asset_metadata
-from src.ingestion.sentiment_data import GNewsClient
+from src.ingestion.sentiment_data import build_default_news_provider
 from src.ingestion.sentiment_data import NewsSentimentProvider
 
 
@@ -91,7 +91,7 @@ def ingest_sentiment_for_ticker(
             f"{normalized_ticker} must exist in the local asset universe before sentiment can be loaded."
         )
 
-    resolved_provider = provider or GNewsClient()
+    resolved_provider = provider or build_default_news_provider()
     return ingest_asset_news_sentiment(
         asset=universe[0],
         provider=resolved_provider,
@@ -114,7 +114,7 @@ def bootstrap_sentiment_ingestion(
     """
 
     initialize_database(schema_path=SCHEMA_PATH)
-    resolved_provider = provider or GNewsClient()
+    resolved_provider = provider or build_default_news_provider()
     universe = resolve_sentiment_universe(tickers=tickers, session_factory=session_factory)
 
     summaries: list[dict[str, Any]] = []

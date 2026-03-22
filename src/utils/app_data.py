@@ -1001,6 +1001,31 @@ def _gnews_api_key_configured() -> bool:
     return bool(str(os.getenv("GNEWS_API_KEY", "")).strip())
 
 
+def _sentiment_provider_diagnostics() -> dict[str, Any]:
+    """Return current live-provider availability for the sentiment pipeline."""
+
+    from src.ingestion.sentiment_data import get_provider_availability
+
+    availability = get_provider_availability()
+    selected_provider = None
+    fallback_provider_used = False
+    if availability.get("gnews"):
+        selected_provider = "gnews"
+    elif availability.get("finnhub"):
+        selected_provider = "finnhub"
+        fallback_provider_used = True
+    elif availability.get("newsapi"):
+        selected_provider = "newsapi"
+        fallback_provider_used = True
+
+    return {
+        "availability": availability,
+        "selected_provider": selected_provider,
+        "fallback_provider_used": fallback_provider_used,
+        "live_provider_available": selected_provider is not None,
+    }
+
+
 
 def _is_missing_gnews_configuration(detail: str) -> bool:
     normalized = detail.lower()
@@ -1022,7 +1047,7 @@ def _build_sentiment_unavailable_status(
         "message": message,
         "fetched": False,
         "article_count": article_count,
-        "sentiment_unavailable_reason": "GNEWS_API_KEY not configured",
+        "sentiment_unavailable_reason": "news sentiment provider not configured",
     }
 
 
@@ -1064,6 +1089,11 @@ def ensure_sentiment_for_ticker(
 
     stored_rows = load_recent_news_articles(normalized_ticker, limit=page_size)
     if stored_rows and sentiment_is_fresh(stored_rows, freshness_hours=freshness_hours):
+        logger.info(
+            "Sentiment path for %s: selected_provider=cache gnews_detected=%s cached_sentiment_used=true fallback_provider_used=false live_fetch_skipped=true reason=fresh_cache",
+            normalized_ticker,
+            _gnews_api_key_configured(),
+        )
         return {
             "success": True,
             "ticker": normalized_ticker,
@@ -1073,7 +1103,25 @@ def ensure_sentiment_for_ticker(
             "article_count": len(stored_rows),
         }
 
-    if not _gnews_api_key_configured():
+    provider_diagnostics = _sentiment_provider_diagnostics()
+    logger.info(
+        "Sentiment provider diagnostics for %s: selected_provider=%s gnews_detected=%s cached_sentiment_used=%s fallback_provider_used=%s",
+        normalized_ticker,
+        provider_diagnostics["selected_provider"],
+        provider_diagnostics["availability"].get("gnews"),
+        bool(stored_rows),
+        provider_diagnostics["fallback_provider_used"],
+    )
+    if not provider_diagnostics["live_provider_available"]:
+        reason_message = (
+            "No live sentiment provider is configured. Configure GNews, Finnhub, or NewsAPI to enable live refresh."
+        )
+        logger.info(
+            "Sentiment live fetch skipped for %s: selected_provider=none gnews_detected=%s cached_sentiment_used=%s fallback_provider_used=false reason=no_provider_configured",
+            normalized_ticker,
+            provider_diagnostics["availability"].get("gnews"),
+            bool(stored_rows),
+        )
         if stored_rows:
             return _build_sentiment_unavailable_status(
                 ticker=normalized_ticker,
@@ -1081,8 +1129,8 @@ def ensure_sentiment_for_ticker(
                 status="database_stale",
                 success=True,
                 message=(
-                    f"Live sentiment refresh is unavailable for {normalized_ticker} because the GNews provider is not configured. "
-                    "The app will continue using cached sentiment and neutral sentiment fallback where fresh coverage is unavailable."
+                    f"Live sentiment refresh is unavailable for {normalized_ticker} because no news provider is configured. "
+                    "The app will continue using cached sentiment where available."
                 ),
             )
         return _build_sentiment_unavailable_status(
@@ -1091,8 +1139,8 @@ def ensure_sentiment_for_ticker(
             status="sentiment_unavailable",
             success=False,
             message=(
-                f"Live sentiment coverage is unavailable for {normalized_ticker} because the GNews provider is not configured. "
-                "The rest of the app will continue using market/risk data and neutral sentiment fallback for ML scoring."
+                f"Live news sentiment is currently unavailable for {normalized_ticker}. {reason_message} "
+                "The asset is still valid, and the rest of the analytics workflow will continue normally."
             ),
         )
 
@@ -1128,8 +1176,16 @@ def ensure_sentiment_for_ticker(
         )
     except Exception as exc:
         detail = str(exc)
+        logger.info(
+            "Sentiment live fetch failed for %s: selected_provider=%s gnews_detected=%s cached_sentiment_used=%s fallback_provider_used=%s reason=%s",
+            normalized_ticker,
+            provider_diagnostics["selected_provider"],
+            provider_diagnostics["availability"].get("gnews"),
+            bool(stored_rows),
+            provider_diagnostics["fallback_provider_used"],
+            detail,
+        )
         if _is_missing_gnews_configuration(detail):
-            logger.info("Sentiment provider unavailable for %s: %s", normalized_ticker, detail)
             if stored_rows:
                 return _build_sentiment_unavailable_status(
                     ticker=normalized_ticker,
@@ -1138,7 +1194,7 @@ def ensure_sentiment_for_ticker(
                     success=True,
                     message=(
                         f"Live sentiment refresh is unavailable for {normalized_ticker} because the GNews provider is not configured. "
-                        "Cached sentiment will be used where available, with neutral fallback otherwise."
+                        "Cached sentiment will be used where available."
                     ),
                 )
             return _build_sentiment_unavailable_status(
@@ -1151,18 +1207,47 @@ def ensure_sentiment_for_ticker(
                     "The ticker is still valid and the rest of the analytics stack will continue to function."
                 ),
             )
+        if "no configured news sentiment provider is available" in detail.lower():
+            if stored_rows:
+                return _build_sentiment_unavailable_status(
+                    ticker=normalized_ticker,
+                    article_count=len(stored_rows),
+                    status="database_stale",
+                    success=True,
+                    message=(
+                        f"Live sentiment refresh is unavailable for {normalized_ticker} because no news provider is configured. "
+                        "Cached sentiment will be used where available."
+                    ),
+                )
+            return _build_sentiment_unavailable_status(
+                ticker=normalized_ticker,
+                article_count=0,
+                status="sentiment_unavailable",
+                success=False,
+                message=(
+                    f"Live news sentiment is currently unavailable for {normalized_ticker} because no news provider is configured. "
+                    "The asset is still valid, and analytics will continue without live sentiment refresh."
+                ),
+            )
         return {
             "success": False,
             "ticker": normalized_ticker,
             "status": "provider_error",
             "message": (
-                f"Unable to refresh live sentiment for {normalized_ticker}. "
+                f"Unable to refresh live sentiment for {normalized_ticker} due to a news provider issue. "
                 f"Provider detail: {exc}"
             ),
             "fetched": False,
         }
 
     if summary.get("articles_loaded", 0) <= 0:
+        logger.info(
+            "Sentiment live fetch completed for %s: selected_provider=%s gnews_detected=%s cached_sentiment_used=false fallback_provider_used=%s records_loaded=0",
+            normalized_ticker,
+            summary.get("provider"),
+            provider_diagnostics["availability"].get("gnews"),
+            provider_diagnostics["fallback_provider_used"],
+        )
         return {
             "success": False,
             "ticker": normalized_ticker,
@@ -1171,6 +1256,14 @@ def ensure_sentiment_for_ticker(
             "fetched": True,
         }
 
+    logger.info(
+        "Sentiment live fetch completed for %s: selected_provider=%s gnews_detected=%s cached_sentiment_used=false fallback_provider_used=%s records_loaded=%s",
+        normalized_ticker,
+        summary.get("provider"),
+        provider_diagnostics["availability"].get("gnews"),
+        provider_diagnostics["fallback_provider_used"],
+        summary["articles_loaded"],
+    )
     return {
         "success": True,
         "ticker": normalized_ticker,

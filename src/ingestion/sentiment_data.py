@@ -15,6 +15,7 @@ from datetime import timedelta
 from datetime import timezone
 from hashlib import sha256
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Protocol
@@ -39,6 +40,7 @@ NEWSAPI_SOURCE_TYPE = "news_api"
 NEWSAPI_SOURCE_URL = "https://newsapi.org/"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LOGGER = logging.getLogger(__name__)
 
 POSITIVE_TERMS = {
     "beat",
@@ -178,6 +180,51 @@ def _load_sentiment_environment() -> None:
     """Load the project-level environment file for provider credentials."""
 
     load_dotenv(PROJECT_ROOT / ".env", override=False)
+
+
+def get_provider_availability() -> dict[str, bool]:
+    """Return which supported sentiment providers are configured."""
+
+    _load_sentiment_environment()
+    return {
+        "gnews": bool(str(os.getenv("GNEWS_API_KEY", "")).strip()),
+        "finnhub": bool(str(os.getenv("FINNHUB_API_KEY", "")).strip()),
+        "newsapi": bool(str(os.getenv("NEWSAPI_API_KEY") or os.getenv("NEWS_API_KEY") or "").strip()),
+    }
+
+
+def build_default_news_provider() -> NewsSentimentProvider:
+    """
+    Select the best configured provider using a stable fallback order.
+
+    Preference order:
+    1. GNews
+    2. Finnhub
+    3. NewsAPI
+    """
+
+    availability = get_provider_availability()
+    if availability["gnews"]:
+        LOGGER.info("Selected sentiment provider: gnews (GNEWS_API_KEY detected=true)")
+        return GNewsClient()
+    if availability["finnhub"]:
+        LOGGER.info(
+            "Selected sentiment provider: finnhub (GNEWS_API_KEY detected=false, fallback_provider_used=true)"
+        )
+        return FinnhubNewsClient()
+    if availability["newsapi"]:
+        LOGGER.info(
+            "Selected sentiment provider: newsapi (GNEWS_API_KEY detected=false, fallback_provider_used=true)"
+        )
+        return NewsAPIClient()
+
+    LOGGER.info(
+        "Selected sentiment provider: none (GNEWS_API_KEY detected=false, fallback_provider_used=false, live_fetch_skipped=true)"
+    )
+    raise ValueError(
+        "No configured news sentiment provider is available. "
+        "Set GNEWS_API_KEY, FINNHUB_API_KEY, or NEWSAPI_API_KEY to enable live sentiment fetching."
+    )
 
 
 def _request_json(url: str, headers: dict[str, str] | None = None) -> Any:
@@ -565,7 +612,7 @@ def fetch_recent_news_sentiment(
 ) -> list[dict[str, Any]]:
     """Fetch normalized recent articles using the default or supplied provider."""
 
-    resolved_provider = provider or GNewsClient()
+    resolved_provider = provider or build_default_news_provider()
     return [
         article.as_dict()
         for article in resolved_provider.fetch_recent_articles(

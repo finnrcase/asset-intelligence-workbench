@@ -17,6 +17,8 @@ from src.database.loaders import upsert_asset_metadata
 from src.database.queries import get_recent_news_sentiment
 from src.ingestion.bootstrap_sentiment import bootstrap_sentiment_ingestion
 from src.ingestion.bootstrap_sentiment import resolve_sentiment_universe
+from src.ingestion.sentiment_data import build_default_news_provider
+from src.ingestion.sentiment_data import FinnhubNewsClient
 from src.ingestion.sentiment_data import GNEWS_SOURCE_NAME
 from src.ingestion.sentiment_data import GNEWS_SOURCE_TYPE
 from src.ingestion.sentiment_data import GNEWS_SOURCE_URL
@@ -151,6 +153,14 @@ class SentimentBootstrapTests(unittest.TestCase):
         self.assertEqual(trend.shape[0], 2)
         self.assertFalse(table.empty)
         self.assertIn("headline", table.columns)
+
+    @patch(
+        "src.ingestion.sentiment_data.get_provider_availability",
+        return_value={"gnews": False, "finnhub": True, "newsapi": False},
+    )
+    def test_default_provider_falls_back_when_gnews_is_not_configured(self, _mock_availability) -> None:
+        provider = build_default_news_provider()
+        self.assertIsInstance(provider, FinnhubNewsClient)
 
 
 if __name__ == "__main__":

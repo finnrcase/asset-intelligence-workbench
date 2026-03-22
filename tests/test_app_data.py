@@ -27,15 +27,23 @@ class AppDataTests(unittest.TestCase):
     def test_ticker_exists_uses_storage_query_layer(self, _mock_metadata) -> None:
         self.assertTrue(app_data.ticker_exists("voo"))
 
-    @patch("src.utils.app_data._gnews_api_key_configured", return_value=False)
+    @patch(
+        "src.utils.app_data._sentiment_provider_diagnostics",
+        return_value={
+            "availability": {"gnews": False, "finnhub": False, "newsapi": False},
+            "selected_provider": None,
+            "fallback_provider_used": False,
+            "live_provider_available": False,
+        },
+    )
     @patch("src.utils.app_data.load_recent_news_articles", return_value=[])
-    def test_ensure_sentiment_handles_missing_gnews_key_gracefully(self, _mock_rows, _mock_key) -> None:
+    def test_ensure_sentiment_handles_missing_provider_gracefully(self, _mock_rows, _mock_diagnostics) -> None:
         result = app_data.ensure_sentiment_for_ticker("SCHO")
 
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "sentiment_unavailable")
-        self.assertEqual(result["sentiment_unavailable_reason"], "GNEWS_API_KEY not configured")
-        self.assertIn("not configured", result["message"])
+        self.assertEqual(result["sentiment_unavailable_reason"], "news sentiment provider not configured")
+        self.assertIn("no live sentiment provider is configured", result["message"].lower())
 
     @patch(
         "src.utils.app_data.load_latest_ml_forecast",

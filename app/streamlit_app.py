@@ -816,7 +816,7 @@ def main() -> None:
         st.info(sentiment_provider_note)
 
     if sentiment_summary["article_count"] == 0:
-        if sentiment_status and not sentiment_status.get("success"):
+        if sentiment_status and not sentiment_status.get("success") and not sentiment_provider_note:
             st.info(sentiment_status.get("message", "Sentiment data is currently unavailable for this asset."))
         else:
             st.info(
