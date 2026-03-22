@@ -416,11 +416,26 @@ def main() -> None:
         )
 
     if load_clicked:
-        with st.spinner("Resolving asset data..."):
-            resolution = app_data.resolve_asset_for_app(
-                selected_ticker=selected_ticker,
-                manual_ticker=manual_ticker,
-            )
+        requested_ticker = (manual_ticker or selected_ticker or st.session_state.active_ticker or "").strip().upper()
+        load_status_indicator = st.status(
+            f"Loading asset data for {requested_ticker or 'selected asset'}...",
+            expanded=True,
+        )
+        load_status_indicator.write("Checking the local database and resolving the requested ticker.")
+        resolution = app_data.resolve_asset_for_app(
+            selected_ticker=selected_ticker,
+            manual_ticker=manual_ticker,
+        )
+        load_status_indicator.write("Preparing the asset for the analytics workspace.")
+        load_status_indicator.update(
+            label=(
+                f"Asset ready: {resolution.get('ticker') or requested_ticker or 'selected asset'}."
+                if resolution.get("success")
+                else f"Asset load finished with a status for {requested_ticker or 'the selected asset'}."
+            ),
+            state="complete" if resolution.get("success") else "error",
+            expanded=not resolution.get("success"),
+        )
 
         st.session_state.asset_status = resolution
         if resolution.get("success"):
