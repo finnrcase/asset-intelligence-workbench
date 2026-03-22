@@ -41,9 +41,40 @@ class AppDataTests(unittest.TestCase):
         result = app_data.ensure_sentiment_for_ticker("SCHO")
 
         self.assertFalse(result["success"])
-        self.assertEqual(result["status"], "sentiment_unavailable")
+        self.assertEqual(result["status"], "sentiment_unavailable_provider_not_configured")
+        self.assertEqual(result["sentiment_unavailable_reason"], "GNEWS_API_KEY not configured")
+        self.assertEqual(
+            result["ui_message"],
+            "News sentiment is currently unavailable because the configured news provider is not set up and no cached sentiment is available.",
+        )
+        self.assertFalse(result["used_cache"])
+        self.assertEqual(result["sentiment_records_count"], 0)
+
+    @patch(
+        "src.utils.app_data._sentiment_provider_diagnostics",
+        return_value={
+            "availability": {"gnews": False, "finnhub": False, "newsapi": False},
+            "selected_provider": None,
+            "fallback_provider_used": False,
+            "live_provider_available": False,
+        },
+    )
+    @patch("src.utils.app_data.sentiment_is_fresh", return_value=False)
+    @patch("src.utils.app_data.load_recent_news_articles", return_value=[{"headline": "cached"}])
+    def test_ensure_sentiment_uses_cached_status_when_provider_missing(
+        self,
+        _mock_rows,
+        _mock_freshness,
+        _mock_diagnostics,
+    ) -> None:
+        result = app_data.ensure_sentiment_for_ticker("NVDA")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "cached_sentiment_loaded")
+        self.assertEqual(result["ui_message"], "Live news sentiment unavailable; showing cached sentiment.")
+        self.assertTrue(result["used_cache"])
+        self.assertEqual(result["provider_used"], "cache")
         self.assertEqual(result["sentiment_unavailable_reason"], "news sentiment provider not configured")
-        self.assertIn("no live sentiment provider is configured", result["message"].lower())
 
     @patch(
         "src.utils.app_data.load_latest_ml_forecast",

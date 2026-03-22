@@ -1039,15 +1039,24 @@ def _build_sentiment_unavailable_status(
     article_count: int = 0,
     status: str = "sentiment_unavailable",
     success: bool = False,
+    provider_used: str | None = None,
+    used_cache: bool = False,
+    debug_message: str | None = None,
+    reason: str = "news sentiment provider not configured",
 ) -> dict[str, Any]:
     return {
         "success": success,
         "ticker": ticker,
         "status": status,
         "message": message,
+        "ui_message": message,
+        "debug_message": debug_message,
         "fetched": False,
         "article_count": article_count,
-        "sentiment_unavailable_reason": "news sentiment provider not configured",
+        "sentiment_records_count": article_count,
+        "provider_used": provider_used,
+        "used_cache": used_cache,
+        "sentiment_unavailable_reason": reason,
     }
 
 
@@ -1097,10 +1106,15 @@ def ensure_sentiment_for_ticker(
         return {
             "success": True,
             "ticker": normalized_ticker,
-            "status": "database",
+            "status": "cached_sentiment_loaded",
             "message": f"{normalized_ticker} sentiment was loaded from the local database.",
+            "ui_message": "Live news sentiment unavailable; showing cached sentiment.",
+            "debug_message": "fresh_cache",
             "fetched": False,
             "article_count": len(stored_rows),
+            "sentiment_records_count": len(stored_rows),
+            "provider_used": "cache",
+            "used_cache": True,
         }
 
     provider_diagnostics = _sentiment_provider_diagnostics()
@@ -1126,22 +1140,27 @@ def ensure_sentiment_for_ticker(
             return _build_sentiment_unavailable_status(
                 ticker=normalized_ticker,
                 article_count=len(stored_rows),
-                status="database_stale",
+                status="cached_sentiment_loaded",
                 success=True,
-                message=(
-                    f"Live sentiment refresh is unavailable for {normalized_ticker} because no news provider is configured. "
-                    "The app will continue using cached sentiment where available."
-                ),
+                provider_used="cache",
+                used_cache=True,
+                debug_message=reason_message,
+                message="Live news sentiment unavailable; showing cached sentiment.",
+                reason="news sentiment provider not configured",
             )
         return _build_sentiment_unavailable_status(
             ticker=normalized_ticker,
             article_count=0,
-            status="sentiment_unavailable",
+            status="sentiment_unavailable_provider_not_configured",
             success=False,
+            provider_used=provider_diagnostics["selected_provider"],
+            used_cache=False,
+            debug_message=reason_message,
             message=(
-                f"Live news sentiment is currently unavailable for {normalized_ticker}. {reason_message} "
-                "The asset is still valid, and the rest of the analytics workflow will continue normally."
+                "News sentiment is currently unavailable because the configured news provider is not set up "
+                "and no cached sentiment is available."
             ),
+            reason="GNEWS_API_KEY not configured" if not provider_diagnostics["availability"].get("gnews") else "news sentiment provider not configured",
         )
 
     try:
@@ -1152,19 +1171,29 @@ def ensure_sentiment_for_ticker(
             return {
                 "success": False,
                 "ticker": normalized_ticker,
-                "status": "credentials_error",
-                "message": (
-                    f"Stored sentiment is unavailable for {normalized_ticker}, and the configured news provider credentials were rejected. "
-                    "Market, risk, and ML outputs can still run without live sentiment refresh."
-                ),
+                "status": "sentiment_unavailable_provider_failed",
+                "message": "News sentiment is currently unavailable because the configured provider credentials were rejected.",
+                "ui_message": "News sentiment is currently unavailable because the configured provider credentials were rejected.",
+                "debug_message": detail,
                 "fetched": False,
+                "article_count": len(stored_rows),
+                "sentiment_records_count": len(stored_rows),
+                "provider_used": provider_diagnostics["selected_provider"],
+                "used_cache": False,
+                "sentiment_unavailable_reason": "provider credentials rejected",
             }
         return {
             "success": False,
             "ticker": normalized_ticker,
             "status": "ingestion_import_error",
             "message": f"Sentiment ingestion components could not be loaded. Detail: {exc}",
+            "ui_message": "News sentiment is currently unavailable because the sentiment ingestion components could not be loaded.",
+            "debug_message": detail,
             "fetched": False,
+            "article_count": len(stored_rows),
+            "sentiment_records_count": len(stored_rows),
+            "provider_used": provider_diagnostics["selected_provider"],
+            "used_cache": False,
         }
 
     initialize_database()
@@ -1190,54 +1219,68 @@ def ensure_sentiment_for_ticker(
                 return _build_sentiment_unavailable_status(
                     ticker=normalized_ticker,
                     article_count=len(stored_rows),
-                    status="database_stale",
+                    status="cached_sentiment_loaded",
                     success=True,
-                    message=(
-                        f"Live sentiment refresh is unavailable for {normalized_ticker} because the GNews provider is not configured. "
-                        "Cached sentiment will be used where available."
-                    ),
+                    provider_used="cache",
+                    used_cache=True,
+                    debug_message=detail,
+                    message="Live news sentiment unavailable; showing cached sentiment.",
+                    reason="GNEWS_API_KEY not configured",
                 )
             return _build_sentiment_unavailable_status(
                 ticker=normalized_ticker,
                 article_count=0,
-                status="sentiment_unavailable",
+                status="sentiment_unavailable_provider_not_configured",
                 success=False,
+                provider_used=provider_diagnostics["selected_provider"],
+                used_cache=False,
+                debug_message=detail,
                 message=(
-                    f"Live sentiment coverage is unavailable for {normalized_ticker} because the GNews provider is not configured. "
-                    "The ticker is still valid and the rest of the analytics stack will continue to function."
+                    "News sentiment is currently unavailable because the configured news provider is not set up "
+                    "and no cached sentiment is available."
                 ),
+                reason="GNEWS_API_KEY not configured",
             )
         if "no configured news sentiment provider is available" in detail.lower():
             if stored_rows:
                 return _build_sentiment_unavailable_status(
                     ticker=normalized_ticker,
                     article_count=len(stored_rows),
-                    status="database_stale",
+                    status="cached_sentiment_loaded",
                     success=True,
-                    message=(
-                        f"Live sentiment refresh is unavailable for {normalized_ticker} because no news provider is configured. "
-                        "Cached sentiment will be used where available."
-                    ),
+                    provider_used="cache",
+                    used_cache=True,
+                    debug_message=detail,
+                    message="Live news sentiment unavailable; showing cached sentiment.",
+                    reason="news sentiment provider not configured",
                 )
             return _build_sentiment_unavailable_status(
                 ticker=normalized_ticker,
                 article_count=0,
-                status="sentiment_unavailable",
+                status="sentiment_unavailable_provider_not_configured",
                 success=False,
+                provider_used=provider_diagnostics["selected_provider"],
+                used_cache=False,
+                debug_message=detail,
                 message=(
-                    f"Live news sentiment is currently unavailable for {normalized_ticker} because no news provider is configured. "
-                    "The asset is still valid, and analytics will continue without live sentiment refresh."
+                    "News sentiment is currently unavailable because the configured news provider is not set up "
+                    "and no cached sentiment is available."
                 ),
+                reason="news sentiment provider not configured",
             )
         return {
             "success": False,
             "ticker": normalized_ticker,
-            "status": "provider_error",
-            "message": (
-                f"Unable to refresh live sentiment for {normalized_ticker} due to a news provider issue. "
-                f"Provider detail: {exc}"
-            ),
+            "status": "sentiment_unavailable_provider_failed",
+            "message": "News sentiment is currently unavailable because the live provider request failed and no cached sentiment is available.",
+            "ui_message": "News sentiment is currently unavailable because the live provider request failed and no cached sentiment is available.",
+            "debug_message": detail,
             "fetched": False,
+            "article_count": len(stored_rows),
+            "sentiment_records_count": len(stored_rows),
+            "provider_used": provider_diagnostics["selected_provider"],
+            "used_cache": False,
+            "sentiment_unavailable_reason": "sentiment provider request failed",
         }
 
     if summary.get("articles_loaded", 0) <= 0:
@@ -1251,9 +1294,16 @@ def ensure_sentiment_for_ticker(
         return {
             "success": False,
             "ticker": normalized_ticker,
-            "status": "no_data",
-            "message": f"No recent sentiment articles were returned for {normalized_ticker}.",
+            "status": "sentiment_unavailable_no_cache",
+            "message": "News sentiment is currently unavailable because no recent records are stored for this asset.",
+            "ui_message": "News sentiment is currently unavailable because no recent records are stored for this asset.",
+            "debug_message": "provider_returned_zero_articles",
             "fetched": True,
+            "article_count": 0,
+            "sentiment_records_count": 0,
+            "provider_used": summary.get("provider"),
+            "used_cache": False,
+            "sentiment_unavailable_reason": "no recent sentiment records stored for this asset",
         }
 
     logger.info(
@@ -1267,13 +1317,18 @@ def ensure_sentiment_for_ticker(
     return {
         "success": True,
         "ticker": normalized_ticker,
-        "status": "ingested",
+        "status": "live_sentiment_loaded",
         "message": (
             f"{normalized_ticker} sentiment was fetched and stored locally "
             f"({summary['articles_loaded']} articles)."
         ),
+        "ui_message": f"Live news sentiment loaded from {summary.get('provider') or 'the configured provider'}.",
+        "debug_message": None,
         "fetched": True,
         "article_count": summary["articles_loaded"],
+        "sentiment_records_count": summary["articles_loaded"],
+        "provider_used": summary.get("provider"),
+        "used_cache": False,
     }
 
 

@@ -807,25 +807,28 @@ def main() -> None:
     )
     sentiment_summary = app_data.get_sentiment_summary(sentiment_rows)
 
-    sentiment_provider_note = (
-        sentiment_status.get("message")
-        if sentiment_status and sentiment_status.get("status") in {"sentiment_unavailable", "database_stale", "credentials_error", "provider_error"}
-        else None
-    )
-    if sentiment_provider_note:
-        st.info(sentiment_provider_note)
+    sentiment_ui_message = sentiment_status.get("ui_message") if sentiment_status else None
+    sentiment_ui_status = sentiment_status.get("status") if sentiment_status else None
+    if sentiment_ui_message:
+        if sentiment_ui_status in {"live_sentiment_loaded"}:
+            st.success(sentiment_ui_message)
+        elif sentiment_ui_status in {"cached_sentiment_loaded"}:
+            st.info(sentiment_ui_message)
+        else:
+            st.warning(sentiment_ui_message)
 
     if sentiment_summary["article_count"] == 0:
-        if sentiment_status and not sentiment_status.get("success") and not sentiment_provider_note:
-            st.info(sentiment_status.get("message", "Sentiment data is currently unavailable for this asset."))
-        else:
+        if not sentiment_ui_message:
             st.info(
                 "No recent sentiment records are available for this asset at the moment."
             )
     else:
-        if sentiment_status and sentiment_status.get("success") and sentiment_status.get("fetched"):
-            st.success(sentiment_status["message"])
-        elif sentiment_status and sentiment_status.get("success") and sentiment_status.get("status") == "database":
+        if (
+            sentiment_status
+            and sentiment_status.get("success")
+            and sentiment_status.get("status") == "database"
+            and not sentiment_ui_message
+        ):
             st.caption("Recent sentiment was loaded from the local database cache.")
 
         st.caption(
