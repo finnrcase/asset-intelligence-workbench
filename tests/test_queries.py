@@ -15,8 +15,8 @@ from pathlib import Path
 TEST_ROOT = Path(__file__).resolve().parent / ".tmp"
 
 
-def _reload_database_modules(database_url: str, sqlite_path: str):
-    os.environ["DATABASE_URL"] = database_url
+def _reload_database_modules(sqlite_path: str):
+    os.environ.pop("DATABASE_URL", None)
     os.environ["SQLITE_DB_PATH"] = sqlite_path
 
     import src.utils.config as config_module
@@ -37,14 +37,11 @@ class QueryTests(unittest.TestCase):
     def setUp(self) -> None:
         TEST_ROOT.mkdir(parents=True, exist_ok=True)
         self.sqlite_path = TEST_ROOT / f"query_test_{uuid.uuid4().hex}.db"
-        self.database_url = f"sqlite:///{self.sqlite_path.as_posix()}"
-
         (
             self.connection_module,
             self.loaders_module,
             self.queries_module,
         ) = _reload_database_modules(
-            database_url=self.database_url,
             sqlite_path=str(self.sqlite_path),
         )
         self.connection_module.initialize_database()

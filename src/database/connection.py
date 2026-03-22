@@ -1,9 +1,9 @@
 """
-Database connection and ORM model definitions.
+Deterministic database runtime for Asset Intelligence Workbench.
 
-The project uses SQLite for local development today, but the engine/session
-setup and SQLAlchemy models are structured to support a future move to
-PostgreSQL with minimal application code changes.
+This module owns the application's SQLAlchemy engine and session factory so the
+rest of the codebase uses one consistent database path and one connection
+configuration.
 """
 
 from __future__ import annotations
@@ -34,10 +34,11 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import sessionmaker
 
+from src.utils.config import AppConfig
 from src.utils.config import get_config
 
 
-config = get_config()
+DATABASE_CONFIG = get_config()
 
 
 class Base(DeclarativeBase):
@@ -148,7 +149,7 @@ class HistoricalPrice(Base):
     )
 
 
-def _enable_sqlite_foreign_keys(engine: Engine) -> None:
+def _enable_sqlite_foreign_keys(engine: Engine, config: AppConfig) -> None:
     """Enable SQLite foreign key enforcement on every new connection."""
 
     if not config.is_sqlite:
@@ -161,26 +162,44 @@ def _enable_sqlite_foreign_keys(engine: Engine) -> None:
         cursor.close()
 
 
-def get_engine() -> Engine:
-    """Create and return a SQLAlchemy engine for the configured backend."""
+def create_database_engine(config: AppConfig | None = None) -> Engine:
+    """Create the single SQLAlchemy engine for the current runtime."""
 
-    if config.is_sqlite:
-        # Ensure the resolved project-local database directory exists before SQLite opens the file.
-        config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_config = config or DATABASE_CONFIG
+    if resolved_config.is_sqlite:
+        resolved_config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
-    connect_args = {"check_same_thread": False} if config.is_sqlite else {}
+    connect_args = {"check_same_thread": False} if resolved_config.is_sqlite else {}
     engine = create_engine(
-        config.database_url,
-        echo=config.sqlalchemy_echo,
+        resolved_config.database_url,
+        echo=resolved_config.sqlalchemy_echo,
         future=True,
         connect_args=connect_args,
     )
-    _enable_sqlite_foreign_keys(engine)
+    _enable_sqlite_foreign_keys(engine, resolved_config)
     return engine
 
 
-ENGINE = get_engine()
-SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, autocommit=False, future=True)
+def create_session_factory(engine: Engine) -> sessionmaker[Session]:
+    """Create the shared session factory bound to the application engine."""
+
+    return sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+
+
+ENGINE = create_database_engine(DATABASE_CONFIG)
+SessionLocal = create_session_factory(ENGINE)
+
+
+def get_engine() -> Engine:
+    """Return the current shared engine."""
+
+    return ENGINE
+
+
+def get_session_factory() -> sessionmaker[Session]:
+    """Return the current shared session factory."""
+
+    return SessionLocal
 
 
 def reset_database_engine() -> Engine:
@@ -190,8 +209,8 @@ def reset_database_engine() -> Engine:
     global SessionLocal
 
     ENGINE.dispose()
-    ENGINE = get_engine()
-    SessionLocal.configure(bind=ENGINE)
+    ENGINE = create_database_engine(DATABASE_CONFIG)
+    SessionLocal = create_session_factory(ENGINE)
     return ENGINE
 
 
@@ -217,14 +236,14 @@ def session_scope() -> Iterator[Session]:
 
 def initialize_database(schema_path: Path | None = None) -> None:
     """
-    Initialize the database schema.
+    Initialize the database schema using the shared engine.
 
     If a schema file is provided, it is executed directly. Otherwise SQLAlchemy
     metadata is used to create the tables represented by the ORM models.
     """
 
-    if config.is_sqlite:
-        config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    if DATABASE_CONFIG.is_sqlite:
+        DATABASE_CONFIG.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
     if schema_path is not None:
         sql_text = schema_path.read_text(encoding="utf-8")

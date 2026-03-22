@@ -17,8 +17,8 @@ import pandas as pd
 TEST_ROOT = Path(__file__).resolve().parent / ".tmp"
 
 
-def _reload_modules(database_url: str, sqlite_path: str):
-    os.environ["DATABASE_URL"] = database_url
+def _reload_modules(sqlite_path: str):
+    os.environ.pop("DATABASE_URL", None)
     os.environ["SQLITE_DB_PATH"] = sqlite_path
 
     import src.utils.config as config_module
@@ -52,7 +52,6 @@ class ForecastingPipelineTests(unittest.TestCase):
     def setUp(self) -> None:
         TEST_ROOT.mkdir(parents=True, exist_ok=True)
         self.sqlite_path = TEST_ROOT / f"ml_pipeline_{uuid.uuid4().hex}.db"
-        self.database_url = f"sqlite:///{self.sqlite_path.as_posix()}"
         (
             self.connection_module,
             self.loaders_module,
@@ -61,7 +60,6 @@ class ForecastingPipelineTests(unittest.TestCase):
             self.train_module,
             self.predict_module,
         ) = _reload_modules(
-            database_url=self.database_url,
             sqlite_path=str(self.sqlite_path),
         )
         schema_path = Path(__file__).resolve().parents[1] / 'sql' / 'schema.sql'
