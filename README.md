@@ -8,6 +8,22 @@ The goal of the project was to build something closer to a finance, treasury, st
 
 https://asset-intelligence-workbench-eq2zbxelprxwjnnxendyqp.streamlit.app/
 
+## Database path
+
+The local development SQLite database lives at `data/processed/asset_intelligence.db` by default.
+
+- Override it with `SQLITE_DB_PATH` when needed.
+- The app validates the resolved SQLite path on startup.
+- Startup now fails early if the parent directory is not writable, the database file cannot be created, or SQLite cannot open the file for writes.
+
+### Resetting the local database safely
+
+1. Stop the Streamlit app or any Python process using the database.
+2. Delete `data/processed/asset_intelligence.db`.
+3. Restart the app so the schema is recreated automatically.
+
+If you are deploying to a hosted environment with a read-only repo mount, set `SQLITE_DB_PATH` to a writable filesystem location for that environment before startup.
+
 ## What the project does
 
 The user can enter or select a financial instrument such as a stock, ETF, or crypto asset by entering its ticker/CUSIP at the top right. The system then:

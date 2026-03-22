@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib
 import math
+import traceback
 import sys
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from src.analytics.returns import compute_annualized_return
 from src.analytics.returns import compute_total_return
 from src.analytics.risk import build_risk_summary
 from src.analytics.risk import compute_rolling_volatility
-APP_IMPORT_ERRORS: list[ModuleNotFoundError] = []
+APP_IMPORT_ERRORS: list[Exception] = []
 
 try:
     from src.analytics import simulation as simulation_module
@@ -52,7 +53,7 @@ try:
     from src.utils import app_data
 
     app_data = importlib.reload(app_data)
-except ModuleNotFoundError as exc:
+except Exception as exc:
     app_data = None
     APP_IMPORT_ERRORS.append(exc)
 
@@ -263,19 +264,33 @@ def main() -> None:
             {
                 exc.name
                 for exc in APP_IMPORT_ERRORS
-                if getattr(exc, "name", None)
+                if isinstance(exc, ModuleNotFoundError) and getattr(exc, "name", None)
             }
         )
-        missing_label = ", ".join(f"`{name}`" for name in missing_packages) or "`a required package`"
-        st.error(
-            "The app cannot start because required Python dependencies are missing.\n\n"
-            f"Missing package(s): {missing_label}"
-        )
-        st.code("pip install -r requirements.txt", language="bash")
-        st.info(
-            "If you already installed dependencies, make sure Streamlit is running from the same "
-            "Python environment or virtual environment as the project."
-        )
+        startup_errors = [
+            exc for exc in APP_IMPORT_ERRORS if not isinstance(exc, ModuleNotFoundError)
+        ]
+        if startup_errors:
+            startup_error = startup_errors[0]
+            st.error(
+                "The app cannot start because database startup validation failed.\n\n"
+                f"{startup_error}"
+            )
+            st.code(
+                traceback.format_exception_only(type(startup_error), startup_error)[-1].strip(),
+                language="text",
+            )
+        else:
+            missing_label = ", ".join(f"`{name}`" for name in missing_packages) or "`a required package`"
+            st.error(
+                "The app cannot start because required Python dependencies are missing.\n\n"
+                f"Missing package(s): {missing_label}"
+            )
+            st.code("pip install -r requirements.txt", language="bash")
+            st.info(
+                "If you already installed dependencies, make sure Streamlit is running from the same "
+                "Python environment or virtual environment as the project."
+            )
         return
 
     available_assets = app_data.load_available_tickers()

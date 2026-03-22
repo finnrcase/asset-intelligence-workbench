@@ -1,26 +1,31 @@
 """
 Application configuration utilities.
 
-This module centralizes environment loading and path resolution so the rest of
-the codebase can depend on a single, explicit source of truth for runtime
-settings.
+This module centralizes environment loading, SQLite path resolution, and
+startup validation so the rest of the codebase can depend on a single,
+explicit source of truth for runtime settings.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
-import shutil
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
+from sqlalchemy.engine import make_url
 
+
+LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "processed" / "asset_intelligence.db"
-FALLBACK_SQLITE_DIRNAME = "asset-intelligence-workbench"
+
+
+class DatabaseConfigurationError(RuntimeError):
+    """Raised when the configured database path is invalid or not writable."""
 
 
 def _load_environment() -> None:
@@ -29,56 +34,96 @@ def _load_environment() -> None:
     load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 
-def _is_path_writable(path: Path) -> bool:
-    """Return True when the SQLite file path can be written by the current process."""
+def _build_default_database_url(sqlite_path: Path) -> str:
+    """Return the default SQLite database URL for a resolved filesystem path."""
 
-    if path.exists():
-        return _can_write_existing_sqlite_file(path)
-    return os.access(path.parent, os.W_OK)
+    return f"sqlite:///{sqlite_path}"
 
 
-def _can_write_existing_sqlite_file(path: Path) -> bool:
-    """Return True when SQLite can start a write transaction against the file."""
+def _resolve_sqlite_path(database_url: str | None = None) -> Path:
+    """Resolve the SQLite file path from env vars or the local default."""
+
+    explicit_sqlite_path = os.getenv("SQLITE_DB_PATH")
+    if explicit_sqlite_path:
+        return Path(explicit_sqlite_path).expanduser()
+
+    if database_url and database_url.startswith("sqlite"):
+        parsed_url = make_url(database_url)
+        if parsed_url.database in (None, "", ":memory:"):
+            raise DatabaseConfigurationError(
+                f"SQLite DATABASE_URL must point to a filesystem path. Resolved DATABASE_URL: {database_url}"
+            )
+        return Path(parsed_url.database).expanduser()
+
+    return DEFAULT_SQLITE_PATH
+
+
+def _ensure_directory_writable(directory: Path) -> None:
+    """Raise when the parent directory does not exist and cannot be written."""
 
     try:
-        connection = sqlite3.connect(path)
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise DatabaseConfigurationError(
+            f"SQLite parent directory is not writable or cannot be created: {directory}"
+        ) from exc
+
+    probe_path = directory / f".sqlite-write-check-{os.getpid()}.tmp"
+    try:
+        probe_path.write_text("ok", encoding="utf-8")
+        probe_path.unlink()
+    except OSError as exc:
+        raise DatabaseConfigurationError(
+            f"SQLite parent directory is not writable: {directory}"
+        ) from exc
+
+
+def _ensure_sqlite_file_writable(sqlite_path: Path) -> None:
+    """Raise when the SQLite file cannot be created or opened for writes."""
+
+    try:
+        connection = sqlite3.connect(sqlite_path)
         try:
             connection.execute("BEGIN IMMEDIATE")
             connection.rollback()
-            return True
         finally:
             connection.close()
-    except Exception:
-        return False
+    except sqlite3.Error as exc:
+        raise DatabaseConfigurationError(
+            f"SQLite database file is not writable: {sqlite_path}"
+        ) from exc
 
 
-def _fallback_sqlite_path() -> Path:
-    """Return a writable SQLite path outside the potentially read-only repo mount."""
+def _validate_sqlite_database_url(database_url: str) -> None:
+    """Reject explicit SQLite URLs that request read-only access."""
 
-    return Path(tempfile.gettempdir()) / FALLBACK_SQLITE_DIRNAME / DEFAULT_SQLITE_PATH.name
+    normalized_url = database_url.lower()
+    if "mode=ro" in normalized_url or "immutable=1" in normalized_url:
+        raise DatabaseConfigurationError(
+            "SQLite DATABASE_URL requests read-only access, which prevents on-demand ingestion. "
+            f"Resolved DATABASE_URL: {database_url}"
+        )
 
 
-def _resolve_sqlite_path() -> Path:
+def validate_sqlite_runtime(sqlite_path: Path, database_url: str) -> None:
     """
-    Resolve the SQLite path for the current environment.
+    Validate that the configured SQLite location can be used for read/write app operation.
 
-    Local development keeps the project database under `data/processed`. When the
-    repo mount is read-only, such as some hosted Streamlit environments, the app
-    falls back to a temp-backed writable copy.
+    The checks are intentionally explicit so deployment issues fail at startup
+    rather than later during ingestion.
     """
 
-    configured_path = Path(os.getenv("SQLITE_DB_PATH", str(DEFAULT_SQLITE_PATH))).expanduser()
-    if os.getenv("SQLITE_DB_PATH"):
-        return configured_path
+    _validate_sqlite_database_url(database_url)
 
-    if _is_path_writable(configured_path):
-        return configured_path
+    resolved_path = sqlite_path.expanduser().resolve(strict=False)
+    parent_directory = resolved_path.parent
 
-    fallback_path = _fallback_sqlite_path()
-    fallback_path.parent.mkdir(parents=True, exist_ok=True)
-    if not fallback_path.exists() and DEFAULT_SQLITE_PATH.exists():
-        shutil.copy2(DEFAULT_SQLITE_PATH, fallback_path)
-    return fallback_path
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO)
+    LOGGER.info("Resolved SQLite database path: %s", resolved_path)
+
+    _ensure_directory_writable(parent_directory)
+    _ensure_sqlite_file_writable(resolved_path)
 
 
 @dataclass(frozen=True)
@@ -115,11 +160,12 @@ def get_config() -> AppConfig:
 
     _load_environment()
 
-    sqlite_path = _resolve_sqlite_path()
-    database_url = os.getenv("DATABASE_URL", f"sqlite:///{sqlite_path}")
+    configured_database_url = os.getenv("DATABASE_URL")
+    sqlite_path = _resolve_sqlite_path(configured_database_url)
+    database_url = configured_database_url or _build_default_database_url(sqlite_path)
     sqlalchemy_echo = os.getenv("SQLALCHEMY_ECHO", "false").strip().lower() == "true"
 
-    return AppConfig(
+    config = AppConfig(
         project_root=PROJECT_ROOT,
         data_dir=PROJECT_ROOT / "data",
         raw_data_dir=PROJECT_ROOT / "data" / "raw",
@@ -132,3 +178,8 @@ def get_config() -> AppConfig:
         finnhub_api_key=os.getenv("FINNHUB_API_KEY"),
         newsapi_api_key=os.getenv("NEWSAPI_API_KEY") or os.getenv("NEWS_API_KEY"),
     )
+
+    if config.is_sqlite:
+        validate_sqlite_runtime(config.sqlite_path, config.database_url)
+
+    return config
