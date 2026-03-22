@@ -1044,9 +1044,21 @@ def _gnews_api_key_configured() -> bool:
 def _sentiment_provider_diagnostics() -> dict[str, Any]:
     """Return current live-provider availability for the sentiment pipeline."""
 
-    from src.ingestion.sentiment_data import get_provider_availability
+    import importlib
+    import os
 
-    availability = get_provider_availability()
+    from src.ingestion import sentiment_data as sentiment_data_module
+
+    sentiment_data_module = importlib.reload(sentiment_data_module)
+    get_provider_availability = getattr(sentiment_data_module, "get_provider_availability", None)
+    if callable(get_provider_availability):
+        availability = get_provider_availability()
+    else:
+        availability = {
+            "gnews": bool(str(os.getenv("GNEWS_API_KEY", "")).strip()),
+            "finnhub": bool(str(os.getenv("FINNHUB_API_KEY", "")).strip()),
+            "newsapi": bool(str(os.getenv("NEWSAPI_API_KEY") or os.getenv("NEWS_API_KEY") or "").strip()),
+        }
     selected_provider = None
     fallback_provider_used = False
     if availability.get("gnews"):
