@@ -33,6 +33,8 @@ from src.utils.config import get_config
 
 LOGGER = logging.getLogger(__name__)
 CONFIG = get_config()
+DEFAULT_METADATA_FRESHNESS_HOURS = getattr(CONFIG, 'market_data_metadata_freshness_hours', 24)
+DEFAULT_PRICES_FRESHNESS_HOURS = getattr(CONFIG, 'market_data_prices_freshness_hours', 6)
 
 
 @dataclass(frozen=True)
@@ -71,11 +73,11 @@ class MarketDataRepository:
 
         metadata_fresh = self._is_fresh(
             timestamp=metadata_fetched_at,
-            freshness_hours=CONFIG.market_data_metadata_freshness_hours,
+            freshness_hours=DEFAULT_METADATA_FRESHNESS_HOURS,
         )
         price_fresh = self._is_fresh(
             timestamp=prices_fetched_at,
-            freshness_hours=CONFIG.market_data_prices_freshness_hours,
+            freshness_hours=DEFAULT_PRICES_FRESHNESS_HOURS,
         )
         return CachedMarketDataSnapshot(
             ticker=normalized_ticker,
