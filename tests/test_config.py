@@ -48,6 +48,30 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(resolved, expected_path)
         self.assertTrue(any(str(expected_path) in message for message in captured.output))
 
+    def test_relative_sqlite_env_path_is_resolved_from_project_root(self) -> None:
+        with patch.dict(os.environ, {"SQLITE_DB_PATH": "data/custom.db"}, clear=False):
+            resolved = config._resolve_sqlite_path()
+
+        self.assertEqual(
+            resolved,
+            (config.PROJECT_ROOT / "data" / "custom.db").resolve(strict=False),
+        )
+
+    def test_startup_diagnostics_report_expected_keys(self) -> None:
+        diagnostics = config.get_sqlite_startup_diagnostics(
+            (config.PROJECT_ROOT / "data" / "app.db").resolve(strict=False)
+        )
+
+        self.assertIn("resolved_path", diagnostics)
+        self.assertIn("parent_directory", diagnostics)
+        self.assertIn("parent_exists", diagnostics)
+        self.assertIn("parent_writable", diagnostics)
+        self.assertIn("db_exists", diagnostics)
+        self.assertIn("db_writable", diagnostics)
+        self.assertIn("temp_file_create_delete", diagnostics)
+        self.assertIn("sqlite_write_probe", diagnostics)
+        self.assertIn("sqlite_sidefiles", diagnostics)
+
     def test_validate_sqlite_runtime_rejects_readonly_database_url(self) -> None:
         sqlite_path = TEST_ROOT / "readonly_url.db"
 

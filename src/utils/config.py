@@ -13,6 +13,7 @@ import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from sqlalchemy.engine import make_url
@@ -103,6 +104,82 @@ def _ensure_sqlite_file_writable(sqlite_path: Path) -> None:
         ) from exc
 
 
+def _can_create_temp_file(directory: Path) -> bool:
+    """Return True when a normal temporary file can be created and removed."""
+
+    probe_path = directory / f".sqlite-write-check-{os.getpid()}.tmp"
+    try:
+        probe_path.write_text("ok", encoding="utf-8")
+        probe_path.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def _can_write_sqlite_file(sqlite_path: Path) -> bool:
+    """Return True when SQLite can open the file and start a write transaction."""
+
+    try:
+        connection = sqlite3.connect(sqlite_path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.rollback()
+            return True
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return False
+
+
+def _can_create_sqlite_sidefiles(directory: Path) -> bool:
+    """Return True when SQLite can create journal/WAL side files in the same directory."""
+
+    probe_db = directory / f".sqlite-sidefile-check-{os.getpid()}.db"
+    try:
+        connection = sqlite3.connect(probe_db)
+        try:
+            cursor = connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.fetchone()
+            cursor.execute("CREATE TABLE IF NOT EXISTS sidefile_probe (id INTEGER PRIMARY KEY, note TEXT)")
+            cursor.execute("INSERT INTO sidefile_probe(note) VALUES ('ok')")
+            connection.commit()
+        finally:
+            connection.close()
+
+        wal_path = Path(str(probe_db) + "-wal")
+        shm_path = Path(str(probe_db) + "-shm")
+        journal_path = Path(str(probe_db) + "-journal")
+        sidefile_created = wal_path.exists() or shm_path.exists() or journal_path.exists() or probe_db.exists()
+
+        for cleanup_path in (wal_path, shm_path, journal_path, probe_db):
+            if cleanup_path.exists():
+                cleanup_path.unlink()
+
+        return sidefile_created
+    except sqlite3.Error:
+        return False
+
+
+def get_sqlite_startup_diagnostics(sqlite_path: Path) -> dict[str, Any]:
+    """Return a small diagnostic snapshot for the resolved SQLite location."""
+
+    resolved_path = sqlite_path.expanduser().resolve(strict=False)
+    parent_directory = resolved_path.parent
+
+    return {
+        "resolved_path": str(resolved_path),
+        "parent_directory": str(parent_directory),
+        "parent_exists": parent_directory.exists(),
+        "parent_writable": os.access(parent_directory, os.W_OK) if parent_directory.exists() else False,
+        "db_exists": resolved_path.exists(),
+        "db_writable": os.access(resolved_path, os.W_OK) if resolved_path.exists() else None,
+        "temp_file_create_delete": _can_create_temp_file(parent_directory) if parent_directory.exists() else False,
+        "sqlite_write_probe": _can_write_sqlite_file(resolved_path) if parent_directory.exists() else False,
+        "sqlite_sidefiles": _can_create_sqlite_sidefiles(parent_directory) if parent_directory.exists() else False,
+    }
+
+
 def _validate_sqlite_database_url(database_url: str) -> None:
     """Reject explicit SQLite URLs that request read-only access."""
 
@@ -139,6 +216,17 @@ def get_resolved_sqlite_path(database_url: str | None = None) -> Path:
         logging.basicConfig(level=logging.INFO)
     LOGGER.info("Resolved SQLite database path: %s", resolved_path)
     return resolved_path
+
+
+def log_sqlite_startup_diagnostics(database_url: str | None = None) -> dict[str, Any]:
+    """Log the resolved SQLite path and basic filesystem/write diagnostics."""
+
+    resolved_path = get_resolved_sqlite_path(database_url)
+    diagnostics = get_sqlite_startup_diagnostics(resolved_path)
+    LOGGER.info("SQLite database URL: %s", database_url or _build_default_database_url(resolved_path))
+    LOGGER.info("SQLite database parent directory: %s", diagnostics["parent_directory"])
+    LOGGER.info("SQLite startup diagnostics: %s", diagnostics)
+    return diagnostics
 
 
 @dataclass(frozen=True)
@@ -183,6 +271,9 @@ def get_config() -> AppConfig:
         else _build_default_database_url(sqlite_path)
     )
     sqlalchemy_echo = os.getenv("SQLALCHEMY_ECHO", "false").strip().lower() == "true"
+
+    if database_url.startswith("sqlite"):
+        log_sqlite_startup_diagnostics(database_url)
 
     config = AppConfig(
         project_root=PROJECT_ROOT,

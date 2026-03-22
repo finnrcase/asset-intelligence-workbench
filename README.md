@@ -26,8 +26,22 @@ The local development SQLite database lives at `data/app.db` by default.
 Older local database files from the previous layout can also be deleted if you are no longer using them:
 
 - `data/processed/asset_intelligence.db`
+- `data/app.db-wal`
+- `data/app.db-shm`
+- `data/app.db-journal`
+- `data/processed/asset_intelligence.db-wal`
+- `data/processed/asset_intelligence.db-shm`
+- `data/processed/asset_intelligence.db-journal`
 
 If you are deploying to a hosted environment with a read-only repo mount, choose a writable location explicitly with `SQLITE_DB_PATH` before startup.
+
+### SQLite write debug
+
+Run this before starting the app if you want to verify the exact local DB target and writeability outside Streamlit:
+
+```bash
+python -m src.database.debug_sqlite_write
+```
 
 ## What the project does
 
