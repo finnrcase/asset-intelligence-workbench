@@ -35,6 +35,8 @@ LOGGER = logging.getLogger(__name__)
 CONFIG = get_config()
 DEFAULT_METADATA_FRESHNESS_HOURS = getattr(CONFIG, 'market_data_metadata_freshness_hours', 24)
 DEFAULT_PRICES_FRESHNESS_HOURS = getattr(CONFIG, 'market_data_prices_freshness_hours', 6)
+HAS_INGESTION_STATE_MODEL = bool(MarketDataIngestionState) and hasattr(MarketDataIngestionState, 'ticker') and hasattr(MarketDataIngestionState, 'provider_name')
+HAS_INGESTION_RUN_LOG_MODEL = bool(IngestionRunLog) and hasattr(IngestionRunLog, 'ticker') and hasattr(IngestionRunLog, 'provider_name')
 
 
 def _is_fresh_timestamp(timestamp: datetime | None, freshness_hours: int) -> bool:
@@ -68,7 +70,7 @@ class MarketDataRepository:
             metadata = self._get_asset_metadata(session, normalized_ticker)
             price_rows = self._get_price_history(session, normalized_ticker)
             state = None
-            if MarketDataIngestionState is not None:
+            if HAS_INGESTION_STATE_MODEL:
                 state = session.scalar(
                     select(MarketDataIngestionState).where(
                         MarketDataIngestionState.ticker == normalized_ticker,
@@ -146,7 +148,7 @@ class MarketDataRepository:
         normalized_ticker = ticker.strip().upper()
         now = datetime.utcnow()
         with session_scope() as session:
-            if MarketDataIngestionState is not None:
+            if HAS_INGESTION_STATE_MODEL:
                 state = session.scalar(
                     select(MarketDataIngestionState).where(
                         MarketDataIngestionState.ticker == normalized_ticker,
@@ -164,7 +166,7 @@ class MarketDataRepository:
                 state.error_message = error_message
                 state.updated_at = now
 
-            if IngestionRunLog is not None:
+            if HAS_INGESTION_RUN_LOG_MODEL:
                 session.add(
                     IngestionRunLog(
                         ticker=normalized_ticker,
@@ -335,7 +337,7 @@ class MarketDataRepository:
         fetch_status: str,
         error_message: str | None,
     ) -> None:
-        if MarketDataIngestionState is None:
+        if not HAS_INGESTION_STATE_MODEL:
             return
 
         state = session.scalar(
@@ -372,7 +374,7 @@ class MarketDataRepository:
         error_message: str | None,
         records_written: int,
     ) -> None:
-        if IngestionRunLog is None:
+        if not HAS_INGESTION_RUN_LOG_MODEL:
             return
 
         session.add(
