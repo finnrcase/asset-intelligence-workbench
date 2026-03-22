@@ -16,6 +16,7 @@ import pandas as pd
 from sqlalchemy.exc import OperationalError
 
 from src.database.connection import initialize_database
+from src.database.connection import reset_database_engine
 from src.database.connection import session_scope
 from src.database import queries as database_queries
 
@@ -46,6 +47,13 @@ def _classify_market_data_provider_error(exc: Exception) -> tuple[str, str]:
         "provider_error",
         f"Unable to resolve or download market data for the ticker. Provider detail: {detail}",
     )
+
+
+def _is_sqlite_readonly_error(exc: Exception) -> bool:
+    """Return True when an exception corresponds to SQLite readonly write failures."""
+
+    detail = str(exc).lower()
+    return "readonly database" in detail or "attempt to write a readonly database" in detail
 
 
 def load_available_tickers() -> list[dict[str, Any]]:
@@ -182,22 +190,14 @@ def ingest_single_ticker(
         }
 
     try:
-        with session_scope() as session:
-            upsert_asset_metadata(
-                session=session,
-                assets=[metadata],
-                source_name=YFINANCE_SOURCE_NAME,
-                source_type=YFINANCE_SOURCE_TYPE,
-                source_url=YFINANCE_SOURCE_URL,
-            )
-            load_historical_prices(
-                session=session,
-                ticker=normalized_ticker,
-                price_rows=price_rows,
-                source_name=YFINANCE_SOURCE_NAME,
-                source_type=YFINANCE_SOURCE_TYPE,
-                source_url=YFINANCE_SOURCE_URL,
-            )
+        _write_market_data_to_database(
+            ticker=normalized_ticker,
+            metadata=metadata,
+            price_rows=price_rows,
+            source_name=YFINANCE_SOURCE_NAME,
+            source_type=YFINANCE_SOURCE_TYPE,
+            source_url=YFINANCE_SOURCE_URL,
+        )
     except Exception as exc:
         return {
             "success": False,
@@ -212,6 +212,50 @@ def ingest_single_ticker(
         "status": "ingested",
         "message": f"{normalized_ticker} was fetched from the provider and added to the local database.",
     }
+
+
+def _write_market_data_to_database(
+    ticker: str,
+    metadata: dict[str, Any],
+    price_rows: list[dict[str, Any]],
+    source_name: str,
+    source_type: str,
+    source_url: str,
+) -> None:
+    """Persist market data, retrying once if the current SQLite engine goes readonly."""
+
+    from src.database.loaders import load_historical_prices
+    from src.database.loaders import upsert_asset_metadata
+
+    for attempt in range(2):
+        try:
+            with session_scope() as session:
+                upsert_asset_metadata(
+                    session=session,
+                    assets=[metadata],
+                    source_name=source_name,
+                    source_type=source_type,
+                    source_url=source_url,
+                )
+                load_historical_prices(
+                    session=session,
+                    ticker=ticker,
+                    price_rows=price_rows,
+                    source_name=source_name,
+                    source_type=source_type,
+                    source_url=source_url,
+                )
+            return
+        except OperationalError as exc:
+            if attempt == 0 and _is_sqlite_readonly_error(exc):
+                reset_database_engine()
+                continue
+            raise
+        except Exception as exc:
+            if attempt == 0 and _is_sqlite_readonly_error(exc):
+                reset_database_engine()
+                continue
+            raise
 
 
 def resolve_asset_for_app(

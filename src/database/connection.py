@@ -179,6 +179,18 @@ ENGINE = get_engine()
 SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, autocommit=False, future=True)
 
 
+def reset_database_engine() -> Engine:
+    """Dispose and rebuild the shared engine/session factory for the current process."""
+
+    global ENGINE
+    global SessionLocal
+
+    ENGINE.dispose()
+    ENGINE = get_engine()
+    SessionLocal.configure(bind=ENGINE)
+    return ENGINE
+
+
 @contextmanager
 def session_scope() -> Iterator[Session]:
     """

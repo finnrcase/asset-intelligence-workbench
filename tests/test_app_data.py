@@ -1,5 +1,8 @@
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
+
+from sqlalchemy.exc import OperationalError
 
 from src.utils import app_data
 
@@ -33,6 +36,36 @@ class AppDataTests(unittest.TestCase):
         self.assertEqual(result["ticker"], "VOO")
         self.assertEqual(result["status"], "rate_limited")
         self.assertIn("temporarily rate limited", result["message"])
+
+    def test_write_market_data_retries_after_readonly_sqlite_error(self) -> None:
+        calls = {"count": 0}
+
+        @contextmanager
+        def fake_session_scope():
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise OperationalError(
+                    "UPDATE data_sources SET updated_at=? WHERE data_sources.id = ?",
+                    {},
+                    Exception("attempt to write a readonly database"),
+                )
+            yield object()
+
+        with patch("src.utils.app_data.session_scope", fake_session_scope):
+            with patch("src.utils.app_data.reset_database_engine") as mock_reset:
+                with patch("src.database.loaders.upsert_asset_metadata", return_value=[]):
+                    with patch("src.database.loaders.load_historical_prices", return_value=[]):
+                        app_data._write_market_data_to_database(
+                            ticker="VOO",
+                            metadata={"ticker": "VOO", "asset_name": "Vanguard S&P 500 ETF"},
+                            price_rows=[{"price_date": "2026-03-20", "close_price": 1}],
+                            source_name="yfinance",
+                            source_type="market_data_api",
+                            source_url="https://finance.yahoo.com/",
+                        )
+
+        self.assertEqual(calls["count"], 2)
+        mock_reset.assert_called_once()
 
 
 if __name__ == "__main__":
