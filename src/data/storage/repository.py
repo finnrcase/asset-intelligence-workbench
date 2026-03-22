@@ -37,6 +37,14 @@ DEFAULT_METADATA_FRESHNESS_HOURS = getattr(CONFIG, 'market_data_metadata_freshne
 DEFAULT_PRICES_FRESHNESS_HOURS = getattr(CONFIG, 'market_data_prices_freshness_hours', 6)
 
 
+def _is_fresh_timestamp(timestamp: datetime | None, freshness_hours: int) -> bool:
+    """Return True when a cached timestamp falls within the freshness window."""
+
+    if timestamp is None:
+        return False
+    return timestamp >= datetime.utcnow() - timedelta(hours=freshness_hours)
+
+
 @dataclass(frozen=True)
 class CachedMarketDataSnapshot:
     ticker: str
@@ -71,11 +79,11 @@ class MarketDataRepository:
             prices_fetched_at = state.prices_fetched_at if state else None
             last_successful_fetch_at = state.last_successful_fetch_at if state else None
 
-        metadata_fresh = self._is_fresh(
+        metadata_fresh = _is_fresh_timestamp(
             timestamp=metadata_fetched_at,
             freshness_hours=DEFAULT_METADATA_FRESHNESS_HOURS,
         )
-        price_fresh = self._is_fresh(
+        price_fresh = _is_fresh_timestamp(
             timestamp=prices_fetched_at,
             freshness_hours=DEFAULT_PRICES_FRESHNESS_HOURS,
         )
@@ -383,8 +391,3 @@ class MarketDataRepository:
             )
         )
 
-    @staticmethod
-    def _is_fresh(timestamp: datetime | None, freshness_hours: int) -> bool:
-        if timestamp is None:
-            return False
-        return timestamp >= datetime.utcnow() - timedelta(hours=freshness_hours)
