@@ -19,6 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.database.connection import reset_database_engine
 from src.analytics.returns import build_return_frame
 from src.analytics.returns import compute_annualized_return
 from src.analytics.returns import compute_total_return
@@ -785,6 +786,7 @@ def _load_pdf_report_module():
 def main() -> None:
     """Run the first-pass Streamlit dashboard."""
 
+    reset_database_engine()
     _log_startup_deploy_diagnostics()
 
     st.set_page_config(

@@ -225,7 +225,7 @@ def _enable_sqlite_foreign_keys(engine: Engine, config: AppConfig) -> None:
 def create_database_engine(config: AppConfig | None = None) -> Engine:
     """Create the single SQLAlchemy engine for the current runtime."""
 
-    resolved_config = config or DATABASE_CONFIG
+    resolved_config = config or get_config()
     if resolved_config.is_sqlite:
         resolved_config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -265,9 +265,11 @@ def get_session_factory() -> sessionmaker[Session]:
 def reset_database_engine() -> Engine:
     """Dispose and rebuild the shared engine/session factory for the current process."""
 
+    global DATABASE_CONFIG
     global ENGINE
     global SessionLocal
 
+    DATABASE_CONFIG = get_config()
     ENGINE.dispose()
     ENGINE = create_database_engine(DATABASE_CONFIG)
     SessionLocal = create_session_factory(ENGINE)
@@ -302,8 +304,10 @@ def initialize_database(schema_path: Path | None = None) -> None:
     metadata is used to create the tables represented by the ORM models.
     """
 
-    if DATABASE_CONFIG.is_sqlite:
-        DATABASE_CONFIG.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_config = get_config()
+
+    if runtime_config.is_sqlite:
+        runtime_config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
     resolved_schema_path = schema_path
     if resolved_schema_path is None and DEFAULT_SCHEMA_PATH.exists():
