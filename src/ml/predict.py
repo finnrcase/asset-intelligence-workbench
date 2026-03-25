@@ -18,12 +18,39 @@ from src.ml.interpret import aggregate_feature_contributions_by_pillar
 from src.ml.interpret import compute_linear_feature_contributions
 from src.ml.interpret import serialize_rows
 from src.ml.score import classify_directional_signal
-from src.ml.score import sanitize_predicted_return
-from src.ml.score import sanitize_probability
 from src.ml.score import compute_composite_ml_score
 from src.ml.score import compute_confidence_score
 from src.ml.train import prepare_model_frame
 from src.ml.targets import TARGET_NAME
+
+try:
+    from src.ml.score import sanitize_predicted_return
+    from src.ml.score import sanitize_probability
+except ImportError:
+    def sanitize_probability(probability: float | None) -> float:
+        """Clamp directional probabilities to a valid unit interval."""
+
+        if probability is None or pd.isna(probability):
+            return float("nan")
+        return float(min(max(float(probability), 0.0), 1.0))
+
+
+    def sanitize_predicted_return(
+        predicted_return: float | None,
+        target_volatility_scale: float | None = None,
+        hard_cap: float = 0.60,
+    ) -> float:
+        """Bound model-implied returns to a plausible range for downstream use."""
+
+        if predicted_return is None or pd.isna(predicted_return):
+            return float("nan")
+
+        dynamic_cap = hard_cap
+        if target_volatility_scale is not None and not pd.isna(target_volatility_scale):
+            scale = max(float(target_volatility_scale), 0.02)
+            dynamic_cap = min(max(scale * 4.0, 0.20), hard_cap)
+
+        return float(min(max(float(predicted_return), -dynamic_cap), dynamic_cap))
 
 
 LOGGER = logging.getLogger(__name__)
