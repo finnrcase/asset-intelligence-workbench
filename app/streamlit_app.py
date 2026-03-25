@@ -80,33 +80,31 @@ LOGGER = logging.getLogger(__name__)
 APP_THEME_CSS = """
 <style>
 :root {
-    --app-bg: #f3f1ec;
-    --panel-bg: rgba(255, 255, 255, 0.86);
-    --panel-strong: rgba(255, 255, 255, 0.94);
-    --panel-muted: rgba(248, 245, 239, 0.92);
-    --ink: #18242f;
-    --muted: #5e6c78;
-    --muted-soft: #7b8994;
-    --line: rgba(24, 36, 47, 0.08);
-    --line-strong: rgba(24, 36, 47, 0.12);
-    --accent: #204a61;
-    --accent-soft: #dfe8ed;
-    --accent-warm: #b98249;
-    --success: #38654c;
-    --danger: #8c4d45;
-    --shadow-soft: 0 18px 48px rgba(18, 31, 44, 0.08);
-    --shadow-panel: 0 8px 24px rgba(18, 31, 44, 0.06);
-    --radius-xl: 28px;
-    --radius-lg: 22px;
-    --radius-md: 18px;
-    --radius-sm: 14px;
+    --app-bg: #f4f6f8;
+    --page-bg: #eef2f6;
+    --surface: #ffffff;
+    --surface-muted: #f8fafc;
+    --surface-soft: #f1f5f9;
+    --ink: #0f1720;
+    --muted: #536273;
+    --muted-soft: #6d7d8f;
+    --line: #d8e1ea;
+    --line-strong: #c7d3e1;
+    --accent: #5f98c6;
+    --accent-strong: #3f79aa;
+    --accent-soft: #e8f1f8;
+    --success: #2d6a4f;
+    --danger: #a33f3f;
+    --shadow-soft: 0 10px 28px rgba(15, 23, 32, 0.06);
+    --shadow-panel: 0 4px 14px rgba(15, 23, 32, 0.05);
+    --radius-xl: 22px;
+    --radius-lg: 18px;
+    --radius-md: 14px;
+    --radius-sm: 10px;
 }
 
 .stApp {
-    background:
-        radial-gradient(circle at top left, rgba(223, 232, 237, 0.95), transparent 34%),
-        radial-gradient(circle at top right, rgba(238, 230, 220, 0.9), transparent 30%),
-        linear-gradient(180deg, #f7f4ef 0%, var(--app-bg) 45%, #eeece7 100%);
+    background: linear-gradient(180deg, var(--page-bg) 0%, var(--app-bg) 100%);
     color: var(--ink);
 }
 
@@ -115,33 +113,17 @@ APP_THEME_CSS = """
 }
 
 [data-testid="stHeader"] {
-    background: rgba(243, 241, 236, 0.72);
-    backdrop-filter: blur(10px);
+    background: rgba(244, 246, 248, 0.85);
+    backdrop-filter: blur(8px);
 }
 
 [data-testid="stSidebar"] {
-    background:
-        linear-gradient(180deg, rgba(248, 245, 239, 0.96), rgba(241, 237, 231, 0.96));
-    border-right: 1px solid rgba(24, 36, 47, 0.06);
-}
-
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-    gap: 0.9rem;
-}
-
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
-    font-family: "Aptos", "Segoe UI", "Helvetica Neue", sans-serif;
-    font-size: 0.9rem;
-    font-weight: 650;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--ink);
-    opacity: 0.88;
+    display: none;
 }
 
 .block-container {
-    max-width: 1500px;
-    padding-top: 2.2rem;
+    max-width: 1520px;
+    padding-top: 1.65rem;
     padding-bottom: 4rem;
 }
 
@@ -150,26 +132,17 @@ h1, h2, h3 {
 }
 
 h1 {
-    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-    letter-spacing: -0.03em;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: -0.02em;
 }
 
 body, p, li, label, [data-testid="stMarkdownContainer"] {
-    font-family: "Aptos", "Segoe UI", "Helvetica Neue", sans-serif;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 
 [data-testid="stMarkdownContainer"] p {
     color: var(--muted);
-    line-height: 1.58;
-}
-
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] div,
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
-[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
-[data-testid="stSidebar"] [data-testid="stCaptionContainer"] * {
-    color: var(--ink) !important;
-    opacity: 0.88;
+    line-height: 1.55;
 }
 
 [data-testid="stDataFrame"] *,
@@ -181,74 +154,70 @@ body, p, li, label, [data-testid="stMarkdownContainer"] {
 .hero-pill *,
 .asset-pill *,
 .asset-shell *,
+.panel-shell *,
+.summary-card *,
 .inline-note *,
 div[data-baseweb="select"] *,
 .stTextInput *,
 .stNumberInput *,
 .stSelectbox *,
-[data-testid="stSidebar"] .stButton > button:not([kind="primary"]),
-[data-testid="stSidebar"] .stDownloadButton > button,
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span {
+.stSlider * {
     color: var(--ink) !important;
 }
 
 [data-testid="stMetric"] {
-    background: linear-gradient(180deg, var(--panel-strong), rgba(252, 250, 246, 0.96));
+    background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-panel);
-    padding: 1rem 1.1rem;
+    padding: 0.95rem 1rem;
 }
 
 [data-testid="stMetricLabel"] {
-    color: var(--ink);
+    color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.72rem;
     font-weight: 650;
-    opacity: 0.8;
+    opacity: 0.9;
 }
 
 [data-testid="stMetricValue"] {
     color: var(--ink);
-    font-size: 1.45rem;
-    letter-spacing: -0.04em;
+    font-size: 1.35rem;
+    letter-spacing: -0.03em;
 }
 
 .stButton > button, .stDownloadButton > button {
-    border-radius: 999px;
-    min-height: 2.9rem;
-    border: 1px solid rgba(24, 36, 47, 0.1);
-    background: rgba(255, 255, 255, 0.92);
+    border-radius: 10px;
+    min-height: 2.8rem;
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
     color: var(--ink);
-    font-weight: 650;
-    box-shadow: 0 6px 18px rgba(18, 31, 44, 0.05);
+    font-weight: 600;
+    box-shadow: none;
     transition: all 140ms ease;
 }
 
 .stButton > button[kind="primary"] {
-    background: linear-gradient(135deg, var(--accent) 0%, #2f5e76 100%);
+    background: var(--accent-strong);
     color: white;
-    border-color: rgba(32, 74, 97, 0.55);
+    border-color: var(--accent-strong);
 }
 
 .stButton > button:hover, .stDownloadButton > button:hover {
-    transform: translateY(-1px);
-    border-color: rgba(24, 36, 47, 0.16);
-    box-shadow: 0 12px 28px rgba(18, 31, 44, 0.08);
+    border-color: var(--accent);
+    background: var(--surface-muted);
 }
 
 div[data-baseweb="select"] > div,
 .stTextInput > div > div > input,
 .stNumberInput input {
-    border-radius: 16px !important;
-    border: 1px solid rgba(24, 36, 47, 0.1) !important;
-    background: rgba(255, 255, 255, 0.92) !important;
+    border-radius: 10px !important;
+    border: 1px solid var(--line-strong) !important;
+    background: var(--surface) !important;
     color: var(--ink) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    box-shadow: none !important;
 }
 
 div[data-baseweb="select"] input,
@@ -261,24 +230,40 @@ div[data-baseweb="select"] svg,
     opacity: 0.62 !important;
 }
 
-[data-testid="stSidebar"] div[data-baseweb="select"] > div,
-[data-testid="stSidebar"] .stTextInput > div > div > input {
-    color: var(--ink) !important;
-    background: rgba(255, 255, 255, 0.96) !important;
+[data-testid="stTabs"] [role="tablist"] {
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+[data-testid="stTabs"] [role="tab"] {
+    height: 2.75rem;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0 1rem;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    background: var(--surface);
+    color: var(--ink);
+    border-color: var(--accent);
+    box-shadow: var(--shadow-panel);
 }
 
 [data-testid="stSlider"] [role="slider"] {
-    box-shadow: 0 0 0 6px rgba(32, 74, 97, 0.12);
+    box-shadow: 0 0 0 5px rgba(95, 152, 198, 0.18);
 }
 
 [data-testid="stSliderTrack"] {
-    background: linear-gradient(90deg, var(--accent-soft), rgba(32, 74, 97, 0.22));
+    background: linear-gradient(90deg, var(--accent-soft), rgba(95, 152, 198, 0.4));
 }
 
 .stPlotlyChart,
 [data-testid="stDataFrame"],
 [data-testid="stTable"] {
-    background: linear-gradient(180deg, var(--panel-strong), rgba(252, 250, 246, 0.96));
+    background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-panel);
@@ -288,35 +273,33 @@ div[data-baseweb="select"] svg,
 [data-testid="stAlert"] {
     border-radius: var(--radius-md);
     border: 1px solid var(--line);
-    box-shadow: var(--shadow-panel);
+    box-shadow: none;
 }
 
 [data-testid="stStatusWidget"] {
     border-radius: var(--radius-lg);
     border: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.88);
+    background: var(--surface);
 }
 
 [data-testid="stSpinner"] {
-    color: #6f7780;
+    color: var(--muted);
 }
 
 [data-testid="stSpinner"] * {
-    color: #6f7780 !important;
-    stroke: #6f7780 !important;
-    border-top-color: #6f7780 !important;
-    border-right-color: #6f7780 !important;
+    color: var(--muted) !important;
+    stroke: var(--muted) !important;
+    border-top-color: var(--muted) !important;
+    border-right-color: var(--muted) !important;
 }
 
 .app-hero {
-    background:
-        linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(248, 244, 238, 0.92)),
-        linear-gradient(135deg, rgba(223, 232, 237, 0.55), transparent);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
     border: 1px solid var(--line);
-    border-radius: 32px;
+    border-radius: 22px;
     box-shadow: var(--shadow-soft);
-    padding: 1.7rem 1.8rem 1.4rem;
-    margin-bottom: 1.35rem;
+    padding: 1.5rem 1.6rem 1.2rem;
+    margin-bottom: 1rem;
 }
 
 .hero-kicker, .section-kicker {
@@ -328,20 +311,20 @@ div[data-baseweb="select"] svg,
 }
 
 .hero-title {
-    margin: 0.55rem 0 0.5rem;
-    font-size: clamp(2.2rem, 4vw, 3.4rem);
-    line-height: 0.98;
+    margin: 0.45rem 0 0.35rem;
+    font-size: clamp(1.95rem, 4vw, 2.7rem);
+    line-height: 1.05;
 }
 
 .hero-copy {
-    max-width: 52rem;
-    font-size: 1rem;
-    line-height: 1.65;
+    max-width: 58rem;
+    font-size: 0.98rem;
+    line-height: 1.6;
     color: var(--muted);
     margin: 0;
 }
 
-.hero-pill-row, .asset-pill-grid {
+.hero-pill-row, .asset-pill-grid, .summary-grid {
     display: grid;
     gap: 0.75rem;
     margin-top: 1.2rem;
@@ -352,21 +335,20 @@ div[data-baseweb="select"] svg,
 }
 
 .hero-pill, .asset-pill {
-    background: rgba(255, 255, 255, 0.72);
-    border: 1px solid rgba(24, 36, 47, 0.08);
-    border-radius: 18px;
-    padding: 0.95rem 1rem;
+    background: var(--surface-soft);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 0.9rem 1rem;
 }
 
 .pill-label {
     display: block;
-    color: var(--ink);
+    color: var(--muted);
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin-bottom: 0.28rem;
     font-weight: 650;
-    opacity: 0.75;
 }
 
 .pill-value {
@@ -378,12 +360,12 @@ div[data-baseweb="select"] svg,
 }
 
 .asset-shell {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 244, 238, 0.9));
+    background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: 26px;
+    border-radius: 18px;
     box-shadow: var(--shadow-panel);
-    padding: 1.15rem 1.2rem;
-    margin-bottom: 1.2rem;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
 }
 
 .asset-topline {
@@ -396,7 +378,7 @@ div[data-baseweb="select"] svg,
 }
 
 .asset-ticker {
-    font-size: 2rem;
+    font-size: 1.85rem;
     line-height: 1;
     letter-spacing: -0.04em;
     color: var(--ink);
@@ -414,9 +396,9 @@ div[data-baseweb="select"] svg,
     display: inline-flex;
     align-items: center;
     border-radius: 999px;
-    padding: 0.48rem 0.8rem;
-    background: rgba(223, 232, 237, 0.8);
-    color: var(--accent);
+    padding: 0.42rem 0.72rem;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
     font-size: 0.78rem;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -428,14 +410,14 @@ div[data-baseweb="select"] svg,
 }
 
 .section-intro {
-    margin: 1.6rem 0 1rem;
-    padding: 0 0.25rem;
+    margin: 1.4rem 0 0.9rem;
+    padding: 0 0.1rem;
 }
 
 .section-title {
-    margin: 0.24rem 0 0.35rem;
-    font-size: 1.55rem;
-    line-height: 1.08;
+    margin: 0.18rem 0 0.25rem;
+    font-size: 1.35rem;
+    line-height: 1.15;
     letter-spacing: -0.03em;
 }
 
@@ -448,7 +430,7 @@ div[data-baseweb="select"] svg,
 .section-copy {
     max-width: 52rem;
     color: var(--ink);
-    font-size: 0.98rem;
+    font-size: 0.94rem;
     line-height: 1.6;
     margin: 0;
     opacity: 0.82;
@@ -465,13 +447,77 @@ div[data-baseweb="select"] svg,
 }
 
 .inline-note {
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--surface-soft);
     border: 1px solid var(--line);
-    border-radius: 18px;
+    border-radius: 12px;
     padding: 0.85rem 1rem;
     margin: 0.45rem 0 1rem;
     color: var(--ink);
     opacity: 0.9;
+}
+
+.panel-shell {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: var(--shadow-panel);
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
+}
+
+.panel-title {
+    margin: 0;
+    color: var(--ink);
+    font-size: 1rem;
+    font-weight: 650;
+}
+
+.panel-copy {
+    margin: 0.3rem 0 0;
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.5;
+}
+
+.summary-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.summary-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: var(--shadow-panel);
+    padding: 1rem;
+}
+
+.summary-label {
+    color: var(--muted);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.summary-value {
+    margin-top: 0.4rem;
+    color: var(--ink);
+    font-size: 1.45rem;
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.summary-meta {
+    margin-top: 0.4rem;
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.control-note {
+    margin-top: 0.45rem;
+    color: var(--muted);
+    font-size: 0.88rem;
 }
 </style>
 """
@@ -721,6 +767,47 @@ def _render_empty_state(message: str) -> None:
     st.info(message)
 
 
+def _render_panel_header(title: str, description: str | None = None) -> None:
+    """Render a consistent panel header above a control or output block."""
+
+    description_markup = (
+        f'<p class="panel-copy">{escape(description)}</p>'
+        if description
+        else ""
+    )
+    st.markdown(
+        f"""
+        <div class="panel-shell">
+            <p class="panel-title">{escape(title)}</p>
+            {description_markup}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_summary_card(label: str, value: str, meta: str | None = None) -> None:
+    """Render a compact executive summary card."""
+
+    meta_markup = f'<div class="summary-meta">{escape(meta)}</div>' if meta else ""
+    st.markdown(
+        f"""
+        <div class="summary-card">
+            <div class="summary-label">{escape(label)}</div>
+            <div class="summary-value">{escape(value)}</div>
+            {meta_markup}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_chart_block(title: str, description: str | None = None) -> None:
+    """Render a consistent heading for a chart or analytical block."""
+
+    _render_panel_header(title, description)
+
+
 def _render_status_message(status: dict[str, str] | None) -> None:
     """Render the most recent asset resolution message, if one exists."""
 
@@ -802,6 +889,7 @@ def main() -> None:
     st.set_page_config(
         page_title="Asset Intelligence Workbench",
         layout="wide",
+        initial_sidebar_state="collapsed",
     )
 
     _apply_theme()
@@ -860,67 +948,114 @@ def main() -> None:
     if "sentiment_status_by_ticker" not in st.session_state:
         st.session_state.sentiment_status_by_ticker = {}
 
-    with st.sidebar:
-        st.subheader("Asset Selection")
-        if available_assets:
-            dropdown_options = list(asset_labels.keys())
-            default_index = 0
-            if st.session_state.active_ticker in label_by_ticker:
-                default_index = dropdown_options.index(label_by_ticker[st.session_state.active_ticker])
+    tab_input, tab_outputs, tab_summary = st.tabs(
+        ["Input", "Outputs", "Visual Summary"]
+    )
 
-            selected_label = st.selectbox(
-                "Stored Asset",
-                options=dropdown_options,
-                index=default_index,
-                help="Load an asset that already exists in the local database.",
+    selected_ticker = ""
+    manual_ticker = ""
+    load_clicked = False
+    generate_report_clicked = False
+    forecast_horizon = DEFAULT_FORECAST_HORIZON
+    simulation_count = DEFAULT_SIMULATION_COUNT
+
+    with tab_input:
+        _render_section_intro(
+            "Control Center",
+            "Configure the active analysis workspace",
+            "Select stored coverage or ingest a new ticker, set simulation parameters, and prepare report generation from a single operating panel.",
+        )
+
+        if st.session_state.asset_status:
+            _render_status_message(st.session_state.asset_status)
+
+        control_left, control_right = st.columns([1.35, 1], gap="large")
+
+        with control_left:
+            _render_section_intro(
+                "Asset Selection",
+                "Choose the active asset",
+                "Load from the local database or enter a new market symbol for on-demand ingestion.",
             )
-            selected_ticker = asset_labels[selected_label]
+            if available_assets:
+                dropdown_options = list(asset_labels.keys())
+                default_index = 0
+                if st.session_state.active_ticker in label_by_ticker:
+                    default_index = dropdown_options.index(label_by_ticker[st.session_state.active_ticker])
+
+                selected_label = st.selectbox(
+                    "Stored Asset",
+                    options=dropdown_options,
+                    index=default_index,
+                    help="Load an asset that already exists in the local database.",
+                )
+                selected_ticker = asset_labels[selected_label]
+            else:
+                st.caption("No stored assets are currently available.")
+
+            manual_ticker = st.text_input(
+                "Manual Ticker",
+                value="",
+                placeholder="Examples: AAPL, SPY, BTC-USD",
+                help="If provided, this input takes precedence over the dropdown and will fetch the asset if needed.",
+            )
+            st.caption(
+                "Use the stored asset selector for local coverage, or enter a new ticker to fetch and ingest it on demand."
+            )
+
+            action_columns = st.columns(2)
+            with action_columns[0]:
+                load_clicked = st.button(
+                    "Load Asset",
+                    use_container_width=True,
+                    type="primary",
+                )
+            with action_columns[1]:
+                generate_report_clicked = st.button(
+                    "Generate PDF Report",
+                    use_container_width=True,
+                )
+
+        with control_right:
+            _render_section_intro(
+                "Simulation Settings",
+                "Set the forward analysis range",
+                "Preserve the current modeling behavior while tuning the horizon and path count used in scenario generation and PDF output.",
+            )
+            forecast_horizon = st.slider(
+                "Forecast Horizon (Trading Days)",
+                min_value=21,
+                max_value=252,
+                value=DEFAULT_FORECAST_HORIZON,
+                step=21,
+                help="Forward simulation horizon expressed in trading days.",
+            )
+            simulation_count = st.slider(
+                "Simulation Count",
+                min_value=100,
+                max_value=2000,
+                value=DEFAULT_SIMULATION_COUNT,
+                step=100,
+                help="Number of Monte Carlo paths to generate.",
+            )
+            st.markdown(
+                '<p class="control-note">These controls feed the existing simulation and report-generation workflows without altering their underlying logic.</p>',
+                unsafe_allow_html=True,
+            )
+
+        _render_section_intro(
+            "Stored Coverage",
+            "Current assets available in the local database",
+            "This view reflects the same stored asset inventory the app already uses for the dropdown, presented as an operations-oriented coverage table.",
+        )
+        if available_assets:
+            st.dataframe(
+                available_assets,
+                use_container_width=True,
+                hide_index=True,
+            )
         else:
-            st.caption("No stored assets are currently available.")
-            selected_ticker = ""
-
-        manual_ticker = st.text_input(
-            "Manual Ticker",
-            value="",
-            placeholder="Examples: AAPL, SPY, BTC-USD",
-            help="If provided, this input takes precedence over the dropdown and will fetch the asset if needed.",
-        )
-
-        load_clicked = st.button(
-            "Load Asset",
-            use_container_width=True,
-            type="primary",
-        )
-
-        st.caption(
-            "Use the dropdown for locally stored assets, or enter a new ticker to "
-            "fetch and ingest it on demand."
-        )
-
-        st.divider()
-        generate_report_clicked = st.button(
-            "Generate PDF Report",
-            use_container_width=True,
-        )
-
-        st.divider()
-        st.subheader("Simulation")
-        forecast_horizon = st.slider(
-            "Forecast Horizon (Trading Days)",
-            min_value=21,
-            max_value=252,
-            value=DEFAULT_FORECAST_HORIZON,
-            step=21,
-            help="Forward simulation horizon expressed in trading days.",
-        )
-        simulation_count = st.slider(
-            "Simulation Count",
-            min_value=100,
-            max_value=2000,
-            value=DEFAULT_SIMULATION_COUNT,
-            step=100,
-            help="Number of Monte Carlo paths to generate.",
-        )
+            st.info("No stored assets are currently available in the local database.")
 
     if load_clicked:
         requested_ticker = (manual_ticker or selected_ticker or st.session_state.active_ticker or "").strip().upper()
@@ -949,12 +1084,15 @@ def main() -> None:
             st.session_state.active_ticker = resolution["ticker"]
             st.rerun()
 
-    _render_status_message(st.session_state.asset_status)
-
     if not st.session_state.active_ticker:
-        _render_empty_state(
-            "Select an existing asset or enter a ticker to fetch one into the local database."
-        )
+        with tab_outputs:
+            _render_empty_state(
+                "Select an existing asset or enter a ticker to fetch one into the local database."
+            )
+        with tab_summary:
+            _render_empty_state(
+                "Load an asset to populate the executive summary, report actions, and analytical output workspace."
+            )
         return
 
     available_assets = app_data.load_available_tickers()
@@ -965,22 +1103,25 @@ def main() -> None:
     if metadata is None or price_frame.empty:
         status = st.session_state.asset_status or {}
         if status.get("status") == "post_ingest_readback_failed":
-            st.error(status.get("message", "The app could not read back the newly loaded asset data."))
-            st.info(
-                "The ticker was resolved through the provider, but the local database readback did not complete cleanly. "
-                "Load the ticker again once the database write is available."
-            )
+            with tab_outputs:
+                st.error(status.get("message", "The app could not read back the newly loaded asset data."))
+                st.info(
+                    "The ticker was resolved through the provider, but the local database readback did not complete cleanly. "
+                    "Load the ticker again once the database write is available."
+                )
             st.session_state.active_ticker = ""
             return
-        _render_empty_state(
-            f"No historical price data is available for {st.session_state.active_ticker} in the local database."
-        )
+        with tab_outputs:
+            _render_empty_state(
+                f"No historical price data is available for {st.session_state.active_ticker} in the local database."
+            )
         return
 
     if price_frame["analysis_price"].dropna().shape[0] < 2:
-        _render_empty_state(
-            f"{st.session_state.active_ticker} does not have enough clean price observations for analytics yet."
-        )
+        with tab_outputs:
+            _render_empty_state(
+                f"{st.session_state.active_ticker} does not have enough clean price observations for analytics yet."
+            )
         return
 
     sentiment_status = st.session_state.sentiment_status_by_ticker.get(
@@ -1042,6 +1183,546 @@ def main() -> None:
                 state="error",
                 expanded=True,
             )
+
+    with st.spinner(f"Building analytics output for {st.session_state.active_ticker}..."):
+        return_frame = build_return_frame(price_frame, price_column="analysis_price")
+        ml_summary = app_data.build_ml_forecast_summary(st.session_state.active_ticker)
+        rolling_volatility = compute_rolling_volatility(
+            return_frame["daily_return"],
+            window=ROLLING_VOLATILITY_WINDOW,
+        )
+        risk_summary = build_risk_summary(
+            price_frame,
+            price_column="analysis_price",
+            confidence_level=VAR_CONFIDENCE_LEVEL,
+            volatility_window=ROLLING_VOLATILITY_WINDOW,
+        )
+
+    data_origin = (st.session_state.asset_status or {}).get("status", "database")
+    origin_label = "Newly Ingested" if data_origin == "ingested" else "Local Database"
+    sentiment_rows = app_data.load_recent_news_articles(
+        st.session_state.active_ticker,
+        limit=25,
+    )
+    sentiment_summary = app_data.get_sentiment_summary(sentiment_rows)
+    recent_prices = app_data.get_recent_price_table(price_frame, rows=10)
+    total_return = compute_total_return(price_frame, price_column="analysis_price")
+    annualized_return = compute_annualized_return(price_frame, price_column="analysis_price")
+    simulation_result = None
+    simulation_error = None
+    try:
+        simulation_result = run_comparative_monte_carlo_simulation(
+            price_frame,
+            price_column="analysis_price",
+            ml_forecast_snapshot=ml_summary["snapshot"],
+            horizon_days=forecast_horizon,
+            simulation_count=simulation_count,
+        )
+    except ValueError as exc:
+        simulation_error = str(exc)
+
+    with tab_outputs:
+        _render_section_intro(
+            "Report Workspace",
+            "Deliverables and analysis outputs",
+            "Review generated deliverables first, then work through the complete analytical output stack using the active asset and current model settings.",
+        )
+
+        if st.session_state.report_status:
+            if st.session_state.report_status.get("success"):
+                latest_report_path = st.session_state.latest_report_path
+                latest_report_name = st.session_state.latest_report_name
+                st.success(
+                    "PDF report generated successfully.\n\n"
+                    f"`{latest_report_path}`"
+                )
+                if latest_report_name:
+                    st.caption(f"Generated file: `{latest_report_name}`")
+
+                if latest_report_path is None:
+                    st.warning("The generated report path is not available in the current session.")
+                else:
+                    report_path = Path(latest_report_path).resolve()
+                    if report_path.exists():
+                        report_bytes = report_path.read_bytes()
+                        action_columns = st.columns([1.2, 1.1, 3], gap="medium")
+                        with action_columns[0]:
+                            st.download_button(
+                                label="Download Report",
+                                data=report_bytes,
+                                file_name=latest_report_name or report_path.name,
+                                mime="application/pdf",
+                                use_container_width=True,
+                            )
+                        with action_columns[1]:
+                            if st.button("Open Report Locally", use_container_width=True):
+                                pdf_report_module, pdf_report_error = _load_pdf_report_module()
+                                if pdf_report_module is None:
+                                    st.session_state.open_report_status = {
+                                        "success": "false",
+                                        "message": pdf_report_error,
+                                    }
+                                else:
+                                    st.session_state.open_report_status = pdf_report_module.open_report_locally(
+                                        report_path
+                                    )
+                    else:
+                        st.warning(
+                            "The latest generated report file could not be found. "
+                            f"Expected path: `{report_path}`"
+                        )
+            else:
+                st.error(
+                    "Report generation failed.\n\n"
+                    f"{st.session_state.report_status.get('message', 'Unknown error')}"
+                )
+        else:
+            st.info(
+                "Generate a PDF report from the Input tab to make the latest deliverable available for download here."
+            )
+
+        if st.session_state.open_report_status:
+            if st.session_state.open_report_status.get("success") == "true":
+                st.info(st.session_state.open_report_status["message"])
+            else:
+                st.warning(st.session_state.open_report_status["message"])
+
+        _render_asset_overview(
+            metadata=metadata,
+            ticker=st.session_state.active_ticker,
+            origin_label=origin_label,
+            price_frame=price_frame,
+        )
+
+        _render_section_intro(
+            "Market Frame",
+            "Performance and risk at a glance",
+            "Historical performance, realized risk, and recent price behavior remain grouped in one review workspace.",
+        )
+        _render_kpis(price_frame, risk_summary)
+
+        chart_left, chart_right = st.columns(2, gap="large")
+        with chart_left:
+            st.markdown("#### Price History")
+            st.plotly_chart(
+                charts.create_price_history_chart(price_frame),
+                use_container_width=True,
+            )
+        with chart_right:
+            st.markdown("#### Cumulative Return")
+            st.plotly_chart(
+                charts.create_cumulative_return_chart(return_frame.dropna(subset=["cumulative_return"])),
+                use_container_width=True,
+            )
+
+        rolling_volatility_clean = rolling_volatility.dropna()
+        st.markdown("#### Rolling Volatility")
+        if rolling_volatility_clean.empty:
+            st.info(
+                "Rolling volatility requires a longer return history before the full "
+                f"{ROLLING_VOLATILITY_WINDOW}-day window is available."
+            )
+        else:
+            st.plotly_chart(
+                charts.create_rolling_volatility_chart(rolling_volatility_clean),
+                use_container_width=True,
+            )
+
+        _render_minor_label("Recent Price Observations")
+        st.dataframe(recent_prices, use_container_width=True, hide_index=True)
+
+        _render_section_intro(
+            "Model Layer",
+            "Machine learning signal calibration",
+            "This layer combines historical market structure, downside and volatility context, and sentiment into a composite research weighting engine rather than a guaranteed forecast.",
+        )
+
+        if not ml_summary["available"]:
+            st.info(ml_summary["interpretation"])
+        else:
+            snapshot = ml_summary["snapshot"]
+            target_definition = ml_summary.get("target_definition") or {}
+            model_summary = ml_summary.get("model_summary") or {}
+            training_window = ml_summary.get("training_window") or {}
+
+            _render_minor_label("Target Definition")
+            st.info(target_definition.get("summary", "The current ML target definition is unavailable."))
+
+            overview_columns = st.columns(4)
+            overview_columns[0].metric("Composite ML Score", _format_number(snapshot.get("composite_ml_score")))
+            overview_columns[1].metric(
+                "Directional Signal",
+                snapshot.get("directional_signal") or snapshot.get("regime_label") or "N/A",
+            )
+            overview_columns[2].metric("Confidence", _format_percent(snapshot.get("confidence_score")))
+            overview_columns[3].metric(
+                "Selected Model",
+                model_summary.get("selected_model_name") or snapshot.get("selected_model_name") or "N/A",
+            )
+
+            secondary_columns = st.columns(5)
+            secondary_columns[0].metric("Expected 20-Day Return", _format_percent(snapshot.get("predicted_return_20d")))
+            secondary_columns[1].metric("Probability Positive", _format_percent(snapshot.get("probability_positive_20d")))
+            secondary_columns[2].metric("History Score", _format_number(snapshot.get("history_score")))
+            secondary_columns[3].metric("Risk Score", _format_number(snapshot.get("risk_score")))
+            secondary_columns[4].metric("Sentiment Score", _format_number(snapshot.get("sentiment_score")))
+
+            score_reason_rows = [
+                {"Field": "Composite ML Score", "Reason": snapshot.get("composite_ml_score_reason")},
+                {"Field": "Confidence", "Reason": snapshot.get("confidence_score_reason")},
+                {"Field": "History Score", "Reason": snapshot.get("history_score_reason")},
+                {"Field": "Risk Score", "Reason": snapshot.get("risk_score_reason")},
+                {"Field": "Sentiment Score", "Reason": snapshot.get("sentiment_score_reason")},
+            ]
+            score_reason_rows = [row for row in score_reason_rows if row["Reason"]]
+            if score_reason_rows:
+                st.caption("ML coverage notes")
+                st.dataframe(score_reason_rows, use_container_width=True, hide_index=True)
+
+            model_detail_rows = [
+                {
+                    "Target": target_definition.get("name", "forward_return_20d"),
+                    "Horizon": f"{int(target_definition.get('horizon_days') or 20)} trading days",
+                    "Linear Weighting Engine": model_summary.get("selected_model_name") or snapshot.get("selected_model_name") or "ridge_regression",
+                    "Nonlinear Challenger": snapshot.get("regression_model_name") or "random_forest_regressor",
+                    "Direction Classifier": model_summary.get("classification_model_name") or snapshot.get("classification_model_name") or "random_forest_classifier",
+                    "Feature Version": training_window.get("feature_version") or snapshot.get("feature_version") or "v1",
+                    "As Of": str(snapshot.get("as_of_date") or "N/A"),
+                }
+            ]
+            st.dataframe(model_detail_rows, use_container_width=True, hide_index=True)
+
+            ml_chart_left, ml_chart_right = st.columns(2, gap="large")
+            prediction_history = ml_summary["prediction_history"]
+            with ml_chart_left:
+                st.markdown("#### ML Score History")
+                if not prediction_history.empty and prediction_history.shape[0] >= 2:
+                    st.plotly_chart(
+                        charts.create_ml_score_history_chart(prediction_history),
+                        use_container_width=True,
+                    )
+                else:
+                    _render_latest_ml_snapshot(ml_summary)
+
+            with ml_chart_right:
+                st.markdown("#### Pillar Contribution")
+                st.plotly_chart(
+                    charts.create_pillar_contribution_chart(ml_summary.get("pillar_contributions") or []),
+                    use_container_width=True,
+                )
+
+            _render_minor_label("Interpretation")
+            st.info(ml_summary["interpretation"])
+
+            feature_importance = ml_summary.get("feature_importance") or []
+            if feature_importance:
+                feature_chart_left, feature_chart_right = st.columns(2, gap="large")
+                with feature_chart_left:
+                    st.markdown("#### Feature Importance")
+                    st.plotly_chart(
+                        charts.create_feature_importance_chart(feature_importance[:8]),
+                        use_container_width=True,
+                    )
+                with feature_chart_right:
+                    st.markdown("#### Feature Detail")
+                    st.dataframe(
+                        [
+                            {
+                                "Feature": str(row.get("feature", "")).replace("_", " ").title(),
+                                "Importance": _format_number(float(row.get("importance", 0.0))),
+                            }
+                            for row in feature_importance[:8]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+            pillar_weight_rows = ml_summary.get("pillar_weights") or []
+            if pillar_weight_rows:
+                _render_minor_label("Learned Pillar Weights")
+                st.dataframe(
+                    [
+                        {
+                            "Pillar": str(row.get("pillar", "")).title(),
+                            "Weight": _format_percent(float(row.get("weight", 0.0))),
+                        }
+                        for row in pillar_weight_rows
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        _render_section_intro(
+            "Context Layer",
+            "News sentiment",
+            "Recent headline and article context remains grouped with supporting sentiment views and raw recent records.",
+        )
+
+        sentiment_ui_message = sentiment_status.get("ui_message") if sentiment_status else None
+        sentiment_ui_status = sentiment_status.get("status") if sentiment_status else None
+        if sentiment_ui_message:
+            if sentiment_ui_status in {"live_sentiment_loaded"}:
+                st.success(sentiment_ui_message)
+            elif sentiment_ui_status in {"cached_sentiment_loaded"}:
+                st.info(sentiment_ui_message)
+            else:
+                st.warning(sentiment_ui_message)
+
+        if sentiment_summary["article_count"] == 0:
+            if not sentiment_ui_message:
+                st.info("No recent sentiment records are available for this asset at the moment.")
+        else:
+            if (
+                sentiment_status
+                and sentiment_status.get("success")
+                and sentiment_status.get("status") == "database"
+                and not sentiment_ui_message
+            ):
+                st.caption("Recent sentiment was loaded from the local database cache.")
+
+            _render_inline_note(
+                "Recent news sentiment is based on stored headline and article records plus a lightweight lexical score intended for directional context rather than deep NLP inference."
+            )
+            _render_sentiment_summary(sentiment_summary)
+
+            sentiment_trend = app_data.get_sentiment_trend_frame(sentiment_rows)
+            st.markdown("#### Sentiment Trend")
+            if sentiment_trend.shape[0] >= 2:
+                st.plotly_chart(
+                    charts.create_sentiment_trend_chart(sentiment_trend),
+                    use_container_width=True,
+                )
+            else:
+                st.info("At least two publication dates are needed before a sentiment trend chart becomes meaningful.")
+
+            _render_minor_label("Recent Headlines")
+            recent_sentiment = app_data.get_recent_sentiment_table(sentiment_rows, rows=8)
+            st.dataframe(recent_sentiment, use_container_width=True, hide_index=True)
+
+        _render_section_intro(
+            "Scenario Layer",
+            "Forward simulation",
+            "Historical and ML-informed scenario analysis remains intact, reorganized into a cleaner review layout for terminal outcomes and path distributions.",
+        )
+
+        if simulation_error is not None:
+            st.info(f"Simulation requires a sufficient clean return history. Detail: {simulation_error}")
+        else:
+            historical_simulation = simulation_result["historical"]
+            ml_informed_simulation = simulation_result["ml_informed"]
+            simulation_inputs = historical_simulation["inputs"]
+            terminal_summary = historical_simulation["terminal_summary"]
+
+            input_columns = st.columns(3)
+            input_columns[0].metric("Historical Daily Drift", _format_percent(simulation_inputs["daily_drift"]))
+            input_columns[1].metric("Historical Annualized Volatility", _format_percent(simulation_inputs["annualized_volatility"]))
+            input_columns[2].metric("Return Observations", f"{int(simulation_inputs['observations']):,}")
+
+            _render_inline_note(
+                "The base scenario uses historical daily returns to estimate drift and volatility. The ML-informed scenario overlays the latest model-implied expected return and current risk proxy so analysts can compare a purely historical calibration with a current forecast context."
+            )
+            _render_simulation_metrics(terminal_summary)
+
+            if ml_summary["available"]:
+                _render_minor_label("ML-Informed Scenario Overlay")
+                ml_input_columns = st.columns(4)
+                ml_input_columns[0].metric("ML-Implied Daily Drift", _format_percent(ml_informed_simulation["inputs"]["daily_drift"]))
+                ml_input_columns[1].metric("ML Volatility Input", _format_percent(ml_informed_simulation["inputs"]["annualized_volatility"]))
+                ml_input_columns[2].metric("Downside Risk Context", _format_percent(ml_summary["snapshot"]["downside_probability_20d"]))
+                ml_input_columns[3].metric("ML Regime", ml_summary["snapshot"]["regime_label"])
+
+            simulation_chart_left, simulation_chart_right = st.columns(2, gap="large")
+            with simulation_chart_left:
+                st.markdown("#### Historical Path Distribution")
+                st.plotly_chart(
+                    charts.create_monte_carlo_paths_chart(historical_simulation["paths"]),
+                    use_container_width=True,
+                )
+            with simulation_chart_right:
+                st.markdown("#### Historical Terminal Distribution")
+                st.plotly_chart(
+                    charts.create_terminal_distribution_chart(historical_simulation["paths"]),
+                    use_container_width=True,
+                )
+
+            st.markdown("#### Historical Percentile Bands")
+            st.plotly_chart(
+                charts.create_percentile_band_chart(historical_simulation["bands"]),
+                use_container_width=True,
+            )
+
+            if ml_summary["available"]:
+                comparison_left, comparison_right = st.columns(2, gap="large")
+                with comparison_left:
+                    st.markdown("#### Historical vs ML-Informed Bands")
+                    st.plotly_chart(
+                        charts.create_simulation_comparison_chart(
+                            historical_simulation["bands"],
+                            ml_informed_simulation["bands"],
+                        ),
+                        use_container_width=True,
+                    )
+                with comparison_right:
+                    st.markdown("#### ML-Informed Terminal Distribution")
+                    st.plotly_chart(
+                        charts.create_terminal_distribution_chart(ml_informed_simulation["paths"]),
+                        use_container_width=True,
+                    )
+
+                comparison_summary = st.columns(3)
+                comparison_summary[0].metric(
+                    "Historical Median Terminal Price",
+                    _format_number(historical_simulation["terminal_summary"]["median_terminal_price"]),
+                )
+                comparison_summary[1].metric(
+                    "ML-Informed Median Terminal Price",
+                    _format_number(ml_informed_simulation["terminal_summary"]["median_terminal_price"]),
+                )
+                comparison_summary[2].metric(
+                    "Median Scenario Gap",
+                    _format_number(
+                        ml_informed_simulation["terminal_summary"]["median_terminal_price"]
+                        - historical_simulation["terminal_summary"]["median_terminal_price"]
+                    ),
+                )
+
+    with tab_summary:
+        _render_section_intro(
+            "Executive View",
+            "Visual summary of the active asset",
+            "This summary surfaces the main headline signals already produced by the platform so an analyst can scan the asset state before moving into the full output workspace.",
+        )
+        _render_asset_overview(
+            metadata=metadata,
+            ticker=st.session_state.active_ticker,
+            origin_label=origin_label,
+            price_frame=price_frame,
+        )
+
+        summary_columns = st.columns(5)
+        with summary_columns[0]:
+            _render_summary_card("Total Return", _format_percent(total_return))
+        with summary_columns[1]:
+            _render_summary_card("Annualized Return", _format_percent(annualized_return))
+        with summary_columns[2]:
+            _render_summary_card("Annualized Volatility", _format_percent(risk_summary["annualized_volatility"]))
+        with summary_columns[3]:
+            _render_summary_card("Sentiment Articles", f"{sentiment_summary['article_count']:,}")
+        with summary_columns[4]:
+            _render_summary_card(
+                "Report Status",
+                "Ready" if st.session_state.report_status and st.session_state.report_status.get("success") else "Not Generated",
+            )
+
+        if ml_summary["available"]:
+            snapshot = ml_summary["snapshot"]
+            ml_summary_columns = st.columns(4)
+            with ml_summary_columns[0]:
+                _render_summary_card(
+                    "Composite ML Score",
+                    _format_number(snapshot.get("composite_ml_score")),
+                    snapshot.get("directional_signal") or snapshot.get("regime_label") or "N/A",
+                )
+            with ml_summary_columns[1]:
+                _render_summary_card(
+                    "Expected 20-Day Return",
+                    _format_percent(snapshot.get("predicted_return_20d")),
+                    f"Confidence {_format_percent(snapshot.get('confidence_score'))}",
+                )
+            with ml_summary_columns[2]:
+                _render_summary_card(
+                    "Probability Positive",
+                    _format_percent(snapshot.get("probability_positive_20d")),
+                    f"Downside {_format_percent(snapshot.get('downside_probability_20d'))}",
+                )
+            with ml_summary_columns[3]:
+                _render_summary_card(
+                    "Selected Model",
+                    str(
+                        (ml_summary.get("model_summary") or {}).get("selected_model_name")
+                        or snapshot.get("selected_model_name")
+                        or "N/A"
+                    ),
+                    f"As of {snapshot.get('as_of_date') or 'N/A'}",
+                )
+        else:
+            st.info(ml_summary["interpretation"])
+
+        summary_left, summary_right = st.columns([1.35, 1], gap="large")
+        with summary_left:
+            st.markdown("#### Performance Snapshot")
+            st.dataframe(
+                [
+                    {"Metric": "Total Return", "Value": _format_percent(total_return)},
+                    {"Metric": "Annualized Return", "Value": _format_percent(annualized_return)},
+                    {"Metric": "Max Drawdown", "Value": _format_percent(risk_summary["max_drawdown"])},
+                    {"Metric": "Historical VaR (95%)", "Value": _format_percent(risk_summary["historical_var"])},
+                    {"Metric": "Expected Shortfall (95%)", "Value": _format_percent(risk_summary["expected_shortfall"])},
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.markdown("#### Recent Price Table")
+            st.dataframe(recent_prices, use_container_width=True, hide_index=True)
+
+        with summary_right:
+            st.markdown("#### Coverage and Context")
+            st.dataframe(
+                [
+                    {"Field": "Ticker", "Value": st.session_state.active_ticker},
+                    {"Field": "Asset Name", "Value": str(metadata.get("asset_name") or st.session_state.active_ticker)},
+                    {"Field": "Asset Class", "Value": str(metadata.get("asset_class") or "N/A")},
+                    {"Field": "Exchange / Currency", "Value": f"{metadata.get('exchange') or 'N/A'} / {metadata.get('currency') or 'N/A'}"},
+                    {"Field": "Primary Source", "Value": str(metadata.get("primary_source") or "N/A")},
+                    {"Field": "Data Origin", "Value": origin_label},
+                    {"Field": "Average Sentiment", "Value": _format_number(sentiment_summary["average_sentiment"]) if sentiment_summary["average_sentiment"] is not None else "N/A"},
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            if simulation_error is None:
+                terminal_summary = simulation_result["historical"]["terminal_summary"]
+                st.markdown("#### Scenario Snapshot")
+                st.dataframe(
+                    [
+                        {"Metric": "Median Terminal Price", "Value": _format_number(terminal_summary["median_terminal_price"])},
+                        {"Metric": "5th Percentile", "Value": _format_number(terminal_summary["p05_terminal_price"])},
+                        {"Metric": "95th Percentile", "Value": _format_number(terminal_summary["p95_terminal_price"])},
+                        {"Metric": "P(End Above Start)", "Value": _format_percent(terminal_summary["probability_above_start"])},
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info(f"Scenario summary is unavailable until simulation inputs are sufficient. Detail: {simulation_error}")
+
+        summary_chart_left, summary_chart_right = st.columns(2, gap="large")
+        with summary_chart_left:
+            st.markdown("#### Price History")
+            st.plotly_chart(
+                charts.create_price_history_chart(price_frame),
+                use_container_width=True,
+            )
+        with summary_chart_right:
+            if simulation_error is None:
+                st.markdown("#### Simulation Percentile Bands")
+                st.plotly_chart(
+                    charts.create_percentile_band_chart(simulation_result["historical"]["bands"]),
+                    use_container_width=True,
+                )
+            else:
+                sentiment_trend = app_data.get_sentiment_trend_frame(sentiment_rows)
+                st.markdown("#### Sentiment Overview")
+                if sentiment_trend.shape[0] >= 2:
+                    st.plotly_chart(
+                        charts.create_sentiment_trend_chart(sentiment_trend),
+                        use_container_width=True,
+                    )
+                else:
+                    st.info("Summary charts will expand as additional sentiment history becomes available.")
+
+    return
 
     if st.session_state.report_status:
         if st.session_state.report_status.get("success"):

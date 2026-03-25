@@ -130,6 +130,20 @@ class ConfigTests(unittest.TestCase):
         self.assertIn(str(sqlite_path), str(context.exception))
         self.assertIn("not writable", str(context.exception))
 
+    def test_validate_sqlite_runtime_handles_oserror_from_sqlite_probe(self) -> None:
+        sqlite_path = TEST_ROOT / "write_probe_oserror.db"
+
+        with patch("src.utils.config._build_runtime_sqlite_path", return_value=sqlite_path.resolve(strict=False)):
+            with patch("src.utils.config.sqlite3.connect", side_effect=PermissionError("access denied")):
+                with self.assertRaises(config.DatabaseConfigurationError) as context:
+                    config.validate_sqlite_runtime(
+                        sqlite_path=sqlite_path,
+                        database_url=f"sqlite:///{sqlite_path}",
+                    )
+
+        self.assertIn(str(sqlite_path), str(context.exception))
+        self.assertIn("not writable", str(context.exception))
+
     def test_validate_sqlite_runtime_uses_fallback_when_file_is_not_writable(self) -> None:
         temp_root = TEST_ROOT / f"validate_runtime_fallback_{uuid4().hex}"
         sqlite_path = temp_root / "readonly" / "write_probe.db"
@@ -198,6 +212,44 @@ class ConfigTests(unittest.TestCase):
                 copied_connection.close()
 
             self.assertEqual(row[0], "MSFT")
+        finally:
+            self._cleanup_tree(temp_root)
+
+    def test_prepare_sqlite_runtime_uses_fresh_runtime_db_when_copy_fails(self) -> None:
+        temp_root = TEST_ROOT / f"runtime_copy_failure_{uuid4().hex}"
+        source_path = temp_root / "readonly" / "asset_intelligence.db"
+        runtime_root = temp_root / "runtime"
+
+        try:
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text("placeholder", encoding="utf-8")
+
+            original_ensure_writable = config._ensure_sqlite_file_writable
+
+            def fake_ensure_writable(sqlite_path: Path) -> None:
+                if sqlite_path == source_path.resolve(strict=False):
+                    raise config.DatabaseConfigurationError(
+                        f"SQLite database file is not writable: {sqlite_path}"
+                    )
+                original_ensure_writable(sqlite_path)
+
+            with patch.dict(os.environ, {"SQLITE_RUNTIME_DIR": str(runtime_root)}, clear=False):
+                with patch("src.utils.config._ensure_sqlite_file_writable", side_effect=fake_ensure_writable):
+                    with patch("src.utils.config.shutil.copy2", side_effect=PermissionError("copy blocked")):
+                        runtime_path = config.prepare_sqlite_runtime(
+                            sqlite_path=source_path,
+                            database_url=f"sqlite:///{source_path.resolve(strict=False)}",
+                        )
+
+            self.assertEqual(runtime_path, (runtime_root / source_path.name).resolve(strict=False))
+            self.assertTrue(runtime_path.exists())
+
+            connection = sqlite3.connect(runtime_path)
+            try:
+                connection.execute("CREATE TABLE IF NOT EXISTS fallback_probe (id INTEGER PRIMARY KEY)")
+                connection.commit()
+            finally:
+                connection.close()
         finally:
             self._cleanup_tree(temp_root)
 

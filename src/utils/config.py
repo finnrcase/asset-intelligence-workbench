@@ -123,17 +123,23 @@ def _ensure_directory_writable(directory: Path) -> None:
 def _ensure_sqlite_file_writable(sqlite_path: Path) -> None:
     """Raise when the SQLite file cannot be created or opened for writes."""
 
+    connection: sqlite3.Connection | None = None
     try:
         connection = sqlite3.connect(sqlite_path)
-        try:
-            connection.execute("BEGIN IMMEDIATE")
-            connection.rollback()
-        finally:
-            connection.close()
-    except sqlite3.Error as exc:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.rollback()
+    except (sqlite3.Error, OSError) as exc:
         raise DatabaseConfigurationError(
             f"SQLite database file is not writable: {sqlite_path}"
         ) from exc
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except (sqlite3.Error, OSError) as exc:
+                raise DatabaseConfigurationError(
+                    f"SQLite database file is not writable: {sqlite_path}"
+                ) from exc
 
 
 def _get_runtime_sqlite_root() -> Path:
@@ -184,7 +190,15 @@ def prepare_sqlite_runtime(sqlite_path: Path, database_url: str) -> Path:
 
         _ensure_directory_writable(runtime_path.parent)
         if resolved_path.exists() and resolved_path != runtime_path and not runtime_path.exists():
-            shutil.copy2(resolved_path, runtime_path)
+            try:
+                shutil.copy2(resolved_path, runtime_path)
+            except OSError as copy_exc:
+                LOGGER.warning(
+                    "Unable to copy SQLite database from %s to %s; continuing with a fresh runtime database. Copy error: %s",
+                    resolved_path,
+                    runtime_path,
+                    copy_exc,
+                )
         _ensure_sqlite_file_writable(runtime_path)
         return runtime_path
 
@@ -204,33 +218,35 @@ def _can_create_temp_file(directory: Path) -> bool:
 def _can_write_sqlite_file(sqlite_path: Path) -> bool:
     """Return True when SQLite can open the file and start a write transaction."""
 
+    connection: sqlite3.Connection | None = None
     try:
         connection = sqlite3.connect(sqlite_path)
-        try:
-            connection.execute("BEGIN IMMEDIATE")
-            connection.rollback()
-            return True
-        finally:
-            connection.close()
-    except sqlite3.Error:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.rollback()
+        return True
+    except (sqlite3.Error, OSError):
         return False
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except (sqlite3.Error, OSError):
+                return False
 
 
 def _can_create_sqlite_sidefiles(directory: Path) -> bool:
     """Return True when SQLite can create journal/WAL side files in the same directory."""
 
     probe_db = directory / f".sqlite-sidefile-check-{os.getpid()}.db"
+    connection: sqlite3.Connection | None = None
     try:
         connection = sqlite3.connect(probe_db)
-        try:
-            cursor = connection.cursor()
-            cursor.execute("PRAGMA journal_mode=WAL;")
-            cursor.fetchone()
-            cursor.execute("CREATE TABLE IF NOT EXISTS sidefile_probe (id INTEGER PRIMARY KEY, note TEXT)")
-            cursor.execute("INSERT INTO sidefile_probe(note) VALUES ('ok')")
-            connection.commit()
-        finally:
-            connection.close()
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.fetchone()
+        cursor.execute("CREATE TABLE IF NOT EXISTS sidefile_probe (id INTEGER PRIMARY KEY, note TEXT)")
+        cursor.execute("INSERT INTO sidefile_probe(note) VALUES ('ok')")
+        connection.commit()
 
         wal_path = Path(str(probe_db) + "-wal")
         shm_path = Path(str(probe_db) + "-shm")
@@ -242,8 +258,14 @@ def _can_create_sqlite_sidefiles(directory: Path) -> bool:
                 cleanup_path.unlink()
 
         return sidefile_created
-    except sqlite3.Error:
+    except (sqlite3.Error, OSError):
         return False
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except (sqlite3.Error, OSError):
+                return False
 
 
 def get_sqlite_startup_diagnostics(sqlite_path: Path) -> dict[str, Any]:
