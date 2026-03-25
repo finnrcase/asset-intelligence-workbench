@@ -1089,18 +1089,19 @@ def main() -> None:
         else:
             st.warning(st.session_state.open_report_status["message"])
 
-    return_frame = build_return_frame(price_frame, price_column="analysis_price")
-    ml_summary = app_data.build_ml_forecast_summary(st.session_state.active_ticker)
-    rolling_volatility = compute_rolling_volatility(
-        return_frame["daily_return"],
-        window=ROLLING_VOLATILITY_WINDOW,
-    )
-    risk_summary = build_risk_summary(
-        price_frame,
-        price_column="analysis_price",
-        confidence_level=VAR_CONFIDENCE_LEVEL,
-        volatility_window=ROLLING_VOLATILITY_WINDOW,
-    )
+    with st.spinner(f"Building analytics output for {st.session_state.active_ticker}..."):
+        return_frame = build_return_frame(price_frame, price_column="analysis_price")
+        ml_summary = app_data.build_ml_forecast_summary(st.session_state.active_ticker)
+        rolling_volatility = compute_rolling_volatility(
+            return_frame["daily_return"],
+            window=ROLLING_VOLATILITY_WINDOW,
+        )
+        risk_summary = build_risk_summary(
+            price_frame,
+            price_column="analysis_price",
+            confidence_level=VAR_CONFIDENCE_LEVEL,
+            volatility_window=ROLLING_VOLATILITY_WINDOW,
+        )
 
     data_origin = (st.session_state.asset_status or {}).get("status", "database")
     origin_label = "Newly Ingested" if data_origin == "ingested" else "Local Database"
