@@ -29,24 +29,63 @@ REPORT_CHART_SIZES = {
     "feature_drivers": (8.8, 4.8),
     "simulation_comparison": (10.8, 5.0),
 }
+APP_CHART_COLORS = {
+    "ink": "#18242f",
+    "muted": "#60707d",
+    "grid": "rgba(24, 36, 47, 0.08)",
+    "line": "rgba(24, 36, 47, 0.10)",
+    "surface": "rgba(255, 255, 255, 0)",
+    "primary": "#204a61",
+    "primary_soft": "rgba(32, 74, 97, 0.16)",
+    "secondary": "#5b6770",
+    "positive": "#4f7c68",
+    "positive_soft": "rgba(79, 124, 104, 0.14)",
+    "negative": "#a05b52",
+    "negative_soft": "rgba(160, 91, 82, 0.14)",
+    "warm": "#b98249",
+    "warm_soft": "rgba(185, 130, 73, 0.16)",
+}
 
 
 def _apply_standard_layout(figure: go.Figure, title: str, y_axis_title: str) -> go.Figure:
-    """Apply a restrained internal-tool visual style to Plotly figures."""
+    """Apply the shared product-style chart layout."""
 
     figure.update_layout(
         title=title,
         template="plotly_white",
-        height=320,
-        margin=dict(l=20, r=20, t=48, b=20),
+        height=340,
+        margin=dict(l=18, r=18, t=64, b=18),
         hovermode="x unified",
         showlegend=False,
         xaxis_title="Date",
         yaxis_title=y_axis_title,
-        font=dict(size=12),
+        paper_bgcolor=APP_CHART_COLORS["surface"],
+        plot_bgcolor=APP_CHART_COLORS["surface"],
+        title_x=0.02,
+        title_font=dict(size=18, color=APP_CHART_COLORS["ink"]),
+        hoverlabel=dict(
+            bgcolor="rgba(255, 255, 255, 0.96)",
+            bordercolor="rgba(24, 36, 47, 0.10)",
+            font=dict(color=APP_CHART_COLORS["ink"], size=12),
+        ),
+        font=dict(size=12, color=APP_CHART_COLORS["muted"]),
     )
-    figure.update_xaxes(showgrid=False)
-    figure.update_yaxes(showgrid=True, gridcolor="rgba(15, 23, 42, 0.08)")
+    figure.update_xaxes(
+        showgrid=False,
+        showline=True,
+        linecolor=APP_CHART_COLORS["line"],
+        tickfont=dict(color=APP_CHART_COLORS["muted"]),
+        title_font=dict(color=APP_CHART_COLORS["muted"]),
+        zeroline=False,
+    )
+    figure.update_yaxes(
+        showgrid=True,
+        gridcolor=APP_CHART_COLORS["grid"],
+        showline=False,
+        tickfont=dict(color=APP_CHART_COLORS["muted"]),
+        title_font=dict(color=APP_CHART_COLORS["muted"]),
+        zeroline=False,
+    )
     return figure
 
 
@@ -59,7 +98,7 @@ def create_price_history_chart(frame: pd.DataFrame, price_column: str = "analysi
             x=frame.index,
             y=frame[price_column],
             mode="lines",
-            line=dict(color="#0f4c81", width=2),
+            line=dict(color=APP_CHART_COLORS["primary"], width=2.7),
             name="Price",
         )
     )
@@ -75,7 +114,7 @@ def create_cumulative_return_chart(return_frame: pd.DataFrame) -> go.Figure:
             x=return_frame.index,
             y=return_frame["cumulative_return"],
             mode="lines",
-            line=dict(color="#2e7d32", width=2),
+            line=dict(color=APP_CHART_COLORS["positive"], width=2.7),
             name="Cumulative Return",
         )
     )
@@ -92,7 +131,7 @@ def create_rolling_volatility_chart(rolling_volatility: pd.Series) -> go.Figure:
             x=rolling_volatility.index,
             y=rolling_volatility,
             mode="lines",
-            line=dict(color="#8a5a00", width=2),
+            line=dict(color=APP_CHART_COLORS["warm"], width=2.6),
             name="Rolling Volatility",
         )
     )
@@ -115,7 +154,7 @@ def create_monte_carlo_paths_chart(
                 x=subset.index,
                 y=subset[column],
                 mode="lines",
-                line=dict(color="rgba(15, 76, 129, 0.14)", width=1),
+                line=dict(color=APP_CHART_COLORS["primary_soft"], width=1.05),
                 hoverinfo="skip",
                 showlegend=False,
             )
@@ -127,7 +166,7 @@ def create_monte_carlo_paths_chart(
             x=median_series.index,
             y=median_series,
             mode="lines",
-            line=dict(color="#0f4c81", width=2.5),
+            line=dict(color=APP_CHART_COLORS["primary"], width=2.8),
             name="Median Path",
         )
     )
@@ -143,7 +182,7 @@ def create_terminal_distribution_chart(simulated_paths: pd.DataFrame) -> go.Figu
         go.Histogram(
             x=terminal_values,
             nbinsx=40,
-            marker=dict(color="#5b6770"),
+            marker=dict(color=APP_CHART_COLORS["secondary"]),
             opacity=0.9,
             name="Terminal Price",
         )
@@ -161,7 +200,7 @@ def create_percentile_band_chart(percentile_bands: pd.DataFrame) -> go.Figure:
             x=percentile_bands.index,
             y=percentile_bands["p95"],
             mode="lines",
-            line=dict(color="rgba(46, 125, 50, 0.0)"),
+            line=dict(color="rgba(79, 124, 104, 0.0)"),
             showlegend=False,
             hoverinfo="skip",
         )
@@ -171,9 +210,9 @@ def create_percentile_band_chart(percentile_bands: pd.DataFrame) -> go.Figure:
             x=percentile_bands.index,
             y=percentile_bands["p05"],
             mode="lines",
-            line=dict(color="rgba(46, 125, 50, 0.0)"),
+            line=dict(color="rgba(79, 124, 104, 0.0)"),
             fill="tonexty",
-            fillcolor="rgba(46, 125, 50, 0.12)",
+            fillcolor=APP_CHART_COLORS["positive_soft"],
             name="5th-95th Percentile",
         )
     )
@@ -182,7 +221,7 @@ def create_percentile_band_chart(percentile_bands: pd.DataFrame) -> go.Figure:
             x=percentile_bands.index,
             y=percentile_bands["p75"],
             mode="lines",
-            line=dict(color="rgba(15, 76, 129, 0.0)"),
+            line=dict(color="rgba(32, 74, 97, 0.0)"),
             showlegend=False,
             hoverinfo="skip",
         )
@@ -192,9 +231,9 @@ def create_percentile_band_chart(percentile_bands: pd.DataFrame) -> go.Figure:
             x=percentile_bands.index,
             y=percentile_bands["p25"],
             mode="lines",
-            line=dict(color="rgba(15, 76, 129, 0.0)"),
+            line=dict(color="rgba(32, 74, 97, 0.0)"),
             fill="tonexty",
-            fillcolor="rgba(15, 76, 129, 0.18)",
+            fillcolor="rgba(32, 74, 97, 0.16)",
             name="25th-75th Percentile",
         )
     )
@@ -203,7 +242,7 @@ def create_percentile_band_chart(percentile_bands: pd.DataFrame) -> go.Figure:
             x=percentile_bands.index,
             y=percentile_bands["p50"],
             mode="lines",
-            line=dict(color="#0f4c81", width=2.5),
+            line=dict(color=APP_CHART_COLORS["primary"], width=2.8),
             name="Median",
         )
     )
@@ -218,7 +257,7 @@ def create_sentiment_trend_chart(sentiment_trend: pd.DataFrame) -> go.Figure:
         go.Bar(
             x=sentiment_trend["published_date"],
             y=sentiment_trend["article_count"],
-            marker_color="rgba(91, 103, 112, 0.28)",
+            marker_color="rgba(96, 112, 125, 0.24)",
             name="Article Count",
             yaxis="y2",
         )
@@ -228,23 +267,25 @@ def create_sentiment_trend_chart(sentiment_trend: pd.DataFrame) -> go.Figure:
             x=sentiment_trend["published_date"],
             y=sentiment_trend["average_sentiment"],
             mode="lines+markers",
-            line=dict(color="#0f4c81", width=2.2),
-            marker=dict(size=6),
+            line=dict(color=APP_CHART_COLORS["primary"], width=2.4),
+            marker=dict(size=6, color="#f6f1ea", line=dict(color=APP_CHART_COLORS["primary"], width=1.5)),
             name="Average Sentiment",
         )
     )
     figure.update_layout(
         template="plotly_white",
-        height=320,
-        margin=dict(l=20, r=20, t=48, b=20),
+        height=340,
+        margin=dict(l=18, r=18, t=64, b=18),
         hovermode="x unified",
+        paper_bgcolor=APP_CHART_COLORS["surface"],
+        plot_bgcolor=APP_CHART_COLORS["surface"],
         xaxis_title="Date",
         yaxis=dict(
             title="Average Sentiment",
             range=[-1.0, 1.0],
             zeroline=True,
-            zerolinecolor="rgba(15, 23, 42, 0.18)",
-            gridcolor="rgba(15, 23, 42, 0.08)",
+            zerolinecolor=APP_CHART_COLORS["line"],
+            gridcolor=APP_CHART_COLORS["grid"],
         ),
         yaxis2=dict(
             title="Article Count",
@@ -252,11 +293,13 @@ def create_sentiment_trend_chart(sentiment_trend: pd.DataFrame) -> go.Figure:
             side="right",
             showgrid=False,
         ),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color=APP_CHART_COLORS["muted"])),
         font=dict(size=12),
         title="News Sentiment Trend",
+        title_x=0.02,
+        title_font=dict(size=18, color=APP_CHART_COLORS["ink"]),
     )
-    figure.update_xaxes(showgrid=False)
+    figure.update_xaxes(showgrid=False, showline=True, linecolor=APP_CHART_COLORS["line"])
     return figure
 
 
@@ -269,8 +312,8 @@ def create_prediction_history_chart(prediction_history: pd.DataFrame) -> go.Figu
             x=prediction_history["as_of_date"],
             y=prediction_history["predicted_return_20d"],
             mode="lines+markers",
-            line=dict(color="#0f4c81", width=2.2),
-            marker=dict(size=5),
+            line=dict(color=APP_CHART_COLORS["primary"], width=2.4),
+            marker=dict(size=5, color="#f6f1ea", line=dict(color=APP_CHART_COLORS["primary"], width=1.4)),
             name="Expected Return",
         )
     )
@@ -279,17 +322,19 @@ def create_prediction_history_chart(prediction_history: pd.DataFrame) -> go.Figu
             x=prediction_history["as_of_date"],
             y=prediction_history["downside_probability_20d"],
             mode="lines+markers",
-            line=dict(color="#b0453b", width=2.0),
-            marker=dict(size=5),
+            line=dict(color=APP_CHART_COLORS["negative"], width=2.0),
+            marker=dict(size=5, color="#f6f1ea", line=dict(color=APP_CHART_COLORS["negative"], width=1.4)),
             name="Probability Negative",
             yaxis="y2",
         )
     )
     figure.update_layout(
         template="plotly_white",
-        height=320,
-        margin=dict(l=20, r=20, t=48, b=20),
+        height=340,
+        margin=dict(l=18, r=18, t=64, b=18),
         hovermode="x unified",
+        paper_bgcolor=APP_CHART_COLORS["surface"],
+        plot_bgcolor=APP_CHART_COLORS["surface"],
         xaxis_title="As Of Date",
         yaxis=dict(title="Expected Return", tickformat=".1%"),
         yaxis2=dict(
@@ -300,12 +345,14 @@ def create_prediction_history_chart(prediction_history: pd.DataFrame) -> go.Figu
             showgrid=False,
             range=[0, 1],
         ),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color=APP_CHART_COLORS["muted"])),
         title="Model-Informed Forecast History",
-        font=dict(size=12),
+        title_x=0.02,
+        title_font=dict(size=18, color=APP_CHART_COLORS["ink"]),
+        font=dict(size=12, color=APP_CHART_COLORS["muted"]),
     )
-    figure.update_xaxes(showgrid=False)
-    figure.update_yaxes(gridcolor="rgba(15, 23, 42, 0.08)")
+    figure.update_xaxes(showgrid=False, showline=True, linecolor=APP_CHART_COLORS["line"])
+    figure.update_yaxes(gridcolor=APP_CHART_COLORS["grid"])
     return figure
 
 
@@ -315,7 +362,7 @@ def create_feature_driver_chart(feature_drivers: list[dict[str, object]]) -> go.
     sorted_drivers = sorted(feature_drivers, key=lambda row: abs(float(row["z_score"])), reverse=True)
     labels = [str(row["label"]).title() for row in sorted_drivers]
     z_scores = [float(row["z_score"]) for row in sorted_drivers]
-    colors = ["#0f4c81" if score >= 0 else "#b0453b" for score in z_scores]
+    colors = [APP_CHART_COLORS["primary"] if score >= 0 else APP_CHART_COLORS["negative"] for score in z_scores]
 
     figure = go.Figure(
         go.Bar(
@@ -327,14 +374,18 @@ def create_feature_driver_chart(feature_drivers: list[dict[str, object]]) -> go.
     )
     figure.update_layout(
         template="plotly_white",
-        height=320,
-        margin=dict(l=20, r=20, t=48, b=20),
+        height=340,
+        margin=dict(l=18, r=18, t=64, b=18),
         xaxis_title="Standardized Deviation vs Recent History",
         yaxis_title="Current Drivers",
         title="Current Forecast Driver Context",
-        font=dict(size=12),
+        paper_bgcolor=APP_CHART_COLORS["surface"],
+        plot_bgcolor=APP_CHART_COLORS["surface"],
+        title_x=0.02,
+        title_font=dict(size=18, color=APP_CHART_COLORS["ink"]),
+        font=dict(size=12, color=APP_CHART_COLORS["muted"]),
     )
-    figure.update_xaxes(showgrid=True, gridcolor="rgba(15, 23, 42, 0.08)")
+    figure.update_xaxes(showgrid=True, gridcolor=APP_CHART_COLORS["grid"], showline=True, linecolor=APP_CHART_COLORS["line"])
     figure.update_yaxes(showgrid=False, autorange="reversed")
     return figure
 
@@ -351,7 +402,7 @@ def create_simulation_comparison_chart(
             x=historical_bands.index,
             y=historical_bands["p50"],
             mode="lines",
-            line=dict(color="#5b6770", width=2.1),
+            line=dict(color=APP_CHART_COLORS["secondary"], width=2.1),
             name="Historical Median",
         )
     )
@@ -360,7 +411,7 @@ def create_simulation_comparison_chart(
             x=ml_bands.index,
             y=ml_bands["p50"],
             mode="lines",
-            line=dict(color="#0f4c81", width=2.5),
+            line=dict(color=APP_CHART_COLORS["primary"], width=2.6),
             name="ML-Informed Median",
         )
     )
@@ -369,7 +420,7 @@ def create_simulation_comparison_chart(
             x=ml_bands.index,
             y=ml_bands["p95"],
             mode="lines",
-            line=dict(color="rgba(15, 76, 129, 0.0)"),
+            line=dict(color="rgba(32, 74, 97, 0.0)"),
             showlegend=False,
             hoverinfo="skip",
         )
@@ -379,31 +430,36 @@ def create_simulation_comparison_chart(
             x=ml_bands.index,
             y=ml_bands["p05"],
             mode="lines",
-            line=dict(color="rgba(15, 76, 129, 0.0)"),
+            line=dict(color="rgba(32, 74, 97, 0.0)"),
             fill="tonexty",
-            fillcolor="rgba(15, 76, 129, 0.10)",
+            fillcolor=APP_CHART_COLORS["primary_soft"],
             name="ML-Informed 5th-95th",
         )
     )
     figure.update_layout(
         template="plotly_white",
         height=360,
-        margin=dict(l=20, r=20, t=60, b=64),
+        margin=dict(l=18, r=18, t=68, b=64),
         hovermode="x unified",
         xaxis_title="Forecast Step",
         yaxis_title="Price",
         title="Historical vs ML-Informed Scenario Comparison",
+        paper_bgcolor=APP_CHART_COLORS["surface"],
+        plot_bgcolor=APP_CHART_COLORS["surface"],
+        title_x=0.02,
+        title_font=dict(size=18, color=APP_CHART_COLORS["ink"]),
         legend=dict(
             orientation="h",
             yanchor="top",
             y=-0.22,
             xanchor="center",
             x=0.5,
+            font=dict(color=APP_CHART_COLORS["muted"]),
         ),
-        font=dict(size=12),
+        font=dict(size=12, color=APP_CHART_COLORS["muted"]),
     )
-    figure.update_xaxes(showgrid=False)
-    figure.update_yaxes(showgrid=True, gridcolor="rgba(15, 23, 42, 0.08)")
+    figure.update_xaxes(showgrid=False, showline=True, linecolor=APP_CHART_COLORS["line"])
+    figure.update_yaxes(showgrid=True, gridcolor=APP_CHART_COLORS["grid"])
     return figure
 
 
@@ -705,8 +761,8 @@ def create_ml_score_history_chart(prediction_history: pd.DataFrame) -> go.Figure
             x=prediction_history["as_of_date"],
             y=prediction_history["composite_ml_score"],
             mode="lines+markers",
-            line=dict(color="#0f4c81", width=2.4),
-            marker=dict(size=5),
+            line=dict(color=APP_CHART_COLORS["primary"], width=2.5),
+            marker=dict(size=5, color="#f6f1ea", line=dict(color=APP_CHART_COLORS["primary"], width=1.4)),
             name="Composite Score",
         )
     )
@@ -715,17 +771,19 @@ def create_ml_score_history_chart(prediction_history: pd.DataFrame) -> go.Figure
             x=prediction_history["as_of_date"],
             y=prediction_history["probability_positive_20d"],
             mode="lines+markers",
-            line=dict(color="#2e7d32", width=2.0),
-            marker=dict(size=5),
+            line=dict(color=APP_CHART_COLORS["positive"], width=2.0),
+            marker=dict(size=5, color="#f6f1ea", line=dict(color=APP_CHART_COLORS["positive"], width=1.4)),
             name="Probability Positive",
             yaxis="y2",
         )
     )
     figure.update_layout(
         template="plotly_white",
-        height=320,
-        margin=dict(l=20, r=20, t=48, b=20),
+        height=340,
+        margin=dict(l=18, r=18, t=64, b=18),
         hovermode="x unified",
+        paper_bgcolor=APP_CHART_COLORS["surface"],
+        plot_bgcolor=APP_CHART_COLORS["surface"],
         xaxis_title="As Of Date",
         yaxis=dict(title="Composite Score", range=[-100, 100]),
         yaxis2=dict(
@@ -736,12 +794,14 @@ def create_ml_score_history_chart(prediction_history: pd.DataFrame) -> go.Figure
             showgrid=False,
             range=[0, 1],
         ),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color=APP_CHART_COLORS["muted"])),
         title="ML Signal History",
-        font=dict(size=12),
+        title_x=0.02,
+        title_font=dict(size=18, color=APP_CHART_COLORS["ink"]),
+        font=dict(size=12, color=APP_CHART_COLORS["muted"]),
     )
-    figure.update_xaxes(showgrid=False)
-    figure.update_yaxes(gridcolor="rgba(15, 23, 42, 0.08)")
+    figure.update_xaxes(showgrid=False, showline=True, linecolor=APP_CHART_COLORS["line"])
+    figure.update_yaxes(gridcolor=APP_CHART_COLORS["grid"])
     return figure
 
 
@@ -751,7 +811,7 @@ def create_pillar_contribution_chart(contribution_rows: list[dict[str, object]])
 
     labels = [str(row["pillar"]) for row in contribution_rows]
     values = [float(row["contribution"]) for row in contribution_rows]
-    colors = ["#0f4c81" if value >= 0 else "#b0453b" for value in values]
+    colors = [APP_CHART_COLORS["primary"] if value >= 0 else APP_CHART_COLORS["negative"] for value in values]
     figure = go.Figure(
         go.Bar(
             x=labels,
@@ -761,15 +821,19 @@ def create_pillar_contribution_chart(contribution_rows: list[dict[str, object]])
     )
     figure.update_layout(
         template="plotly_white",
-        height=320,
-        margin=dict(l=20, r=20, t=48, b=20),
+        height=340,
+        margin=dict(l=18, r=18, t=64, b=18),
         xaxis_title="Signal Pillar",
         yaxis_title="Contribution",
         title="Latest Pillar Contribution Breakdown",
-        font=dict(size=12),
+        paper_bgcolor=APP_CHART_COLORS["surface"],
+        plot_bgcolor=APP_CHART_COLORS["surface"],
+        title_x=0.02,
+        title_font=dict(size=18, color=APP_CHART_COLORS["ink"]),
+        font=dict(size=12, color=APP_CHART_COLORS["muted"]),
     )
-    figure.update_xaxes(showgrid=False)
-    figure.update_yaxes(gridcolor="rgba(15, 23, 42, 0.08)")
+    figure.update_xaxes(showgrid=False, showline=True, linecolor=APP_CHART_COLORS["line"])
+    figure.update_yaxes(gridcolor=APP_CHART_COLORS["grid"])
     return figure
 
 
@@ -785,19 +849,23 @@ def create_feature_importance_chart(feature_rows: list[dict[str, object]]) -> go
             x=values,
             y=labels,
             orientation="h",
-            marker_color="#0f4c81",
+            marker_color=APP_CHART_COLORS["primary"],
         )
     )
     figure.update_layout(
         template="plotly_white",
-        height=320,
-        margin=dict(l=20, r=20, t=48, b=20),
+        height=340,
+        margin=dict(l=18, r=18, t=64, b=18),
         xaxis_title="Importance",
         yaxis_title="Feature",
         title="Top ML Feature Importance",
-        font=dict(size=12),
+        paper_bgcolor=APP_CHART_COLORS["surface"],
+        plot_bgcolor=APP_CHART_COLORS["surface"],
+        title_x=0.02,
+        title_font=dict(size=18, color=APP_CHART_COLORS["ink"]),
+        font=dict(size=12, color=APP_CHART_COLORS["muted"]),
     )
-    figure.update_xaxes(showgrid=True, gridcolor="rgba(15, 23, 42, 0.08)")
+    figure.update_xaxes(showgrid=True, gridcolor=APP_CHART_COLORS["grid"], showline=True, linecolor=APP_CHART_COLORS["line"])
     figure.update_yaxes(showgrid=False, autorange="reversed")
     return figure
 

@@ -4,6 +4,7 @@ Streamlit application for the first-pass Asset Intelligence Workbench UI.
 
 from __future__ import annotations
 
+from html import escape
 import importlib
 import logging
 import math
@@ -75,6 +76,331 @@ DEFAULT_SIMULATION_COUNT = 500
 DEFAULT_SENTIMENT_PAGE_SIZE = 12
 DEPLOY_MARKER = "asset-intelligence-workbench-build-2026-03-22-A"
 LOGGER = logging.getLogger(__name__)
+APP_THEME_CSS = """
+<style>
+:root {
+    --app-bg: #f3f1ec;
+    --panel-bg: rgba(255, 255, 255, 0.86);
+    --panel-strong: rgba(255, 255, 255, 0.94);
+    --panel-muted: rgba(248, 245, 239, 0.92);
+    --ink: #18242f;
+    --muted: #5e6c78;
+    --muted-soft: #7b8994;
+    --line: rgba(24, 36, 47, 0.08);
+    --line-strong: rgba(24, 36, 47, 0.12);
+    --accent: #204a61;
+    --accent-soft: #dfe8ed;
+    --accent-warm: #b98249;
+    --success: #38654c;
+    --danger: #8c4d45;
+    --shadow-soft: 0 18px 48px rgba(18, 31, 44, 0.08);
+    --shadow-panel: 0 8px 24px rgba(18, 31, 44, 0.06);
+    --radius-xl: 28px;
+    --radius-lg: 22px;
+    --radius-md: 18px;
+    --radius-sm: 14px;
+}
+
+.stApp {
+    background:
+        radial-gradient(circle at top left, rgba(223, 232, 237, 0.95), transparent 34%),
+        radial-gradient(circle at top right, rgba(238, 230, 220, 0.9), transparent 30%),
+        linear-gradient(180deg, #f7f4ef 0%, var(--app-bg) 45%, #eeece7 100%);
+    color: var(--ink);
+}
+
+[data-testid="stAppViewContainer"] > .main {
+    background: transparent;
+}
+
+[data-testid="stHeader"] {
+    background: rgba(243, 241, 236, 0.72);
+    backdrop-filter: blur(10px);
+}
+
+[data-testid="stSidebar"] {
+    background:
+        linear-gradient(180deg, rgba(248, 245, 239, 0.96), rgba(241, 237, 231, 0.96));
+    border-right: 1px solid rgba(24, 36, 47, 0.06);
+}
+
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+    gap: 0.9rem;
+}
+
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
+    font-family: "Aptos", "Segoe UI", "Helvetica Neue", sans-serif;
+    font-size: 0.9rem;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.block-container {
+    max-width: 1500px;
+    padding-top: 2.2rem;
+    padding-bottom: 4rem;
+}
+
+h1, h2, h3 {
+    color: var(--ink);
+}
+
+h1 {
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    letter-spacing: -0.03em;
+}
+
+body, p, li, label, [data-testid="stMarkdownContainer"] {
+    font-family: "Aptos", "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+[data-testid="stMarkdownContainer"] p {
+    color: var(--muted);
+    line-height: 1.58;
+}
+
+[data-testid="stMetric"] {
+    background: linear-gradient(180deg, var(--panel-strong), rgba(252, 250, 246, 0.96));
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-panel);
+    padding: 1rem 1.1rem;
+}
+
+[data-testid="stMetricLabel"] {
+    color: var(--muted-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.72rem;
+    font-weight: 650;
+}
+
+[data-testid="stMetricValue"] {
+    color: var(--ink);
+    font-size: 1.45rem;
+    letter-spacing: -0.04em;
+}
+
+.stButton > button, .stDownloadButton > button {
+    border-radius: 999px;
+    min-height: 2.9rem;
+    border: 1px solid rgba(24, 36, 47, 0.1);
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--ink);
+    font-weight: 650;
+    box-shadow: 0 6px 18px rgba(18, 31, 44, 0.05);
+    transition: all 140ms ease;
+}
+
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, var(--accent) 0%, #2f5e76 100%);
+    color: white;
+    border-color: rgba(32, 74, 97, 0.55);
+}
+
+.stButton > button:hover, .stDownloadButton > button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(24, 36, 47, 0.16);
+    box-shadow: 0 12px 28px rgba(18, 31, 44, 0.08);
+}
+
+div[data-baseweb="select"] > div,
+.stTextInput > div > div > input,
+.stNumberInput input {
+    border-radius: 16px !important;
+    border: 1px solid rgba(24, 36, 47, 0.1) !important;
+    background: rgba(255, 255, 255, 0.92) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+[data-testid="stSlider"] [role="slider"] {
+    box-shadow: 0 0 0 6px rgba(32, 74, 97, 0.12);
+}
+
+[data-testid="stSliderTrack"] {
+    background: linear-gradient(90deg, var(--accent-soft), rgba(32, 74, 97, 0.22));
+}
+
+.stPlotlyChart,
+[data-testid="stDataFrame"],
+[data-testid="stTable"] {
+    background: linear-gradient(180deg, var(--panel-strong), rgba(252, 250, 246, 0.96));
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+    padding: 0.65rem 0.75rem;
+}
+
+[data-testid="stAlert"] {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-panel);
+}
+
+[data-testid="stStatusWidget"] {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.88);
+}
+
+.app-hero {
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(248, 244, 238, 0.92)),
+        linear-gradient(135deg, rgba(223, 232, 237, 0.55), transparent);
+    border: 1px solid var(--line);
+    border-radius: 32px;
+    box-shadow: var(--shadow-soft);
+    padding: 1.7rem 1.8rem 1.4rem;
+    margin-bottom: 1.35rem;
+}
+
+.hero-kicker, .section-kicker {
+    color: var(--muted-soft);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-weight: 700;
+}
+
+.hero-title {
+    margin: 0.55rem 0 0.5rem;
+    font-size: clamp(2.2rem, 4vw, 3.4rem);
+    line-height: 0.98;
+}
+
+.hero-copy {
+    max-width: 52rem;
+    font-size: 1rem;
+    line-height: 1.65;
+    color: var(--muted);
+    margin: 0;
+}
+
+.hero-pill-row, .asset-pill-grid {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 1.2rem;
+}
+
+.hero-pill-row {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.hero-pill, .asset-pill {
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(24, 36, 47, 0.08);
+    border-radius: 18px;
+    padding: 0.95rem 1rem;
+}
+
+.pill-label {
+    display: block;
+    color: var(--muted-soft);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.28rem;
+    font-weight: 650;
+}
+
+.pill-value {
+    display: block;
+    color: var(--ink);
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.asset-shell {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 244, 238, 0.9));
+    border: 1px solid var(--line);
+    border-radius: 26px;
+    box-shadow: var(--shadow-panel);
+    padding: 1.15rem 1.2rem;
+    margin-bottom: 1.2rem;
+}
+
+.asset-topline {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 0.95rem;
+}
+
+.asset-ticker {
+    font-size: 2rem;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: var(--ink);
+    font-weight: 700;
+}
+
+.asset-subtitle {
+    color: var(--muted);
+    font-size: 0.98rem;
+    margin-top: 0.24rem;
+}
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.48rem 0.8rem;
+    background: rgba(223, 232, 237, 0.8);
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.asset-pill-grid {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.section-intro {
+    margin: 1.6rem 0 1rem;
+    padding: 0 0.25rem;
+}
+
+.section-title {
+    margin: 0.24rem 0 0.35rem;
+    font-size: 1.55rem;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+}
+
+.section-copy {
+    max-width: 52rem;
+    color: var(--muted);
+    font-size: 0.98rem;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.minor-label {
+    color: var(--muted-soft);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    margin-bottom: 0.55rem;
+}
+
+.inline-note {
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 0.85rem 1rem;
+    margin: 0.45rem 0 1rem;
+    color: var(--muted);
+}
+</style>
+"""
 
 
 def _log_startup_deploy_diagnostics() -> None:
@@ -126,6 +452,69 @@ def _format_number(value: float) -> str:
     if value is None or math.isnan(value):
         return "N/A"
     return f"{value:,.2f}"
+
+
+def _apply_theme() -> None:
+    """Inject the application-level visual system."""
+
+    st.markdown(APP_THEME_CSS, unsafe_allow_html=True)
+
+
+def _render_section_intro(kicker: str, title: str, description: str) -> None:
+    """Render a consistent section heading with a softer product-like hierarchy."""
+
+    st.markdown(
+        f"""
+        <section class="section-intro">
+            <div class="section-kicker">{escape(kicker)}</div>
+            <h2 class="section-title">{escape(title)}</h2>
+            <p class="section-copy">{escape(description)}</p>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_asset_overview(metadata: dict[str, object], ticker: str, origin_label: str, price_frame) -> None:
+    """Render a compact asset summary shell above the analysis sections."""
+
+    latest_price = price_frame["analysis_price"].dropna().iloc[-1]
+    latest_date = price_frame.index.max()
+    overview_items = [
+        ("Asset", metadata.get("asset_name") or ticker),
+        ("Classification", metadata.get("asset_class") or "N/A"),
+        ("Exchange / Currency", f"{metadata.get('exchange') or 'N/A'} / {metadata.get('currency') or 'N/A'}"),
+        ("Primary Source", metadata.get("primary_source") or "N/A"),
+        ("Latest Observation", str(latest_date.date()) if hasattr(latest_date, "date") else str(latest_date)),
+        ("Latest Analysis Price", _format_number(float(latest_price))),
+    ]
+    item_markup = "".join(
+        f"""
+        <div class="asset-pill">
+            <span class="pill-label">{escape(label)}</span>
+            <span class="pill-value">{escape(value)}</span>
+        </div>
+        """
+        for label, value in overview_items
+    )
+    st.markdown(
+        f"""
+        <section class="asset-shell">
+            <div class="asset-topline">
+                <div>
+                    <div class="hero-kicker">Active Coverage</div>
+                    <div class="asset-ticker">{escape(ticker)}</div>
+                    <div class="asset-subtitle">{escape(str(metadata.get("asset_name") or "Stored asset analytics view"))}</div>
+                </div>
+                <div class="status-badge">{escape(origin_label)}</div>
+            </div>
+            <div class="asset-pill-grid">
+                {item_markup}
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _render_simulation_metrics(terminal_summary: dict[str, float]) -> None:
@@ -202,11 +591,33 @@ def _render_latest_ml_snapshot(ml_summary: dict[str, object]) -> None:
 def _render_header() -> None:
     """Render the page header."""
 
-    st.title("Asset Intelligence Workbench")
-    st.caption("SQL-Driven Financial Analytics, Risk Simulation, and Reporting Platform")
     st.markdown(
-        "Single-asset analytics view built on stored historical market data, "
-        "SQL-backed retrieval, and reusable return/risk calculations."
+        """
+        <section class="app-hero">
+            <div class="hero-kicker">Asset Intelligence Platform</div>
+            <h1 class="hero-title">Asset Intelligence Workbench</h1>
+            <p class="hero-copy">
+                A focused analytics workspace for stored market data, risk framing, model calibration,
+                and analyst-ready reporting. The workflow stays intact; the presentation is tuned to feel
+                calmer, sharper, and more deliberate.
+            </p>
+            <div class="hero-pill-row">
+                <div class="hero-pill">
+                    <span class="pill-label">Built For</span>
+                    <span class="pill-value">Finance, strategy, and infra research teams</span>
+                </div>
+                <div class="hero-pill">
+                    <span class="pill-label">Core Lens</span>
+                    <span class="pill-value">Market history, risk context, ML signals, and reporting</span>
+                </div>
+                <div class="hero-pill">
+                    <span class="pill-label">Operating Model</span>
+                    <span class="pill-value">Single-asset analysis on top of local SQL-backed retrieval</span>
+                </div>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
     )
 
 
@@ -298,6 +709,7 @@ def main() -> None:
         layout="wide",
     )
 
+    _apply_theme()
     _render_header()
 
     if app_data is None or charts is None:
@@ -598,22 +1010,18 @@ def main() -> None:
 
     data_origin = (st.session_state.asset_status or {}).get("status", "database")
     origin_label = "Newly Ingested" if data_origin == "ingested" else "Local Database"
-
-    metadata_columns = st.columns([2, 2, 2, 2])
-    metadata_columns[0].markdown(f"**Asset**  \n{metadata['asset_name']}")
-    metadata_columns[1].markdown(
-        f"**Classification**  \n{metadata.get('asset_class') or 'N/A'}"
-    )
-    metadata_columns[2].markdown(
-        f"**Exchange / Currency**  \n"
-        f"{metadata.get('exchange') or 'N/A'} / {metadata.get('currency') or 'N/A'}"
-    )
-    metadata_columns[3].markdown(
-        f"**Primary Source / Load Path**  \n"
-        f"{metadata.get('primary_source') or 'N/A'} / {origin_label}"
+    _render_asset_overview(
+        metadata=metadata,
+        ticker=st.session_state.active_ticker,
+        origin_label=origin_label,
+        price_frame=price_frame,
     )
 
-    st.divider()
+    _render_section_intro(
+        "Market Frame",
+        "Performance and risk at a glance",
+        "Top-line return and risk diagnostics stay exactly the same, but they are grouped into a clearer analytical opening with cleaner chart framing.",
+    )
     _render_kpis(price_frame, risk_summary)
 
     chart_left, chart_right = st.columns(2)
@@ -640,15 +1048,14 @@ def main() -> None:
             use_container_width=True,
         )
 
-    st.subheader("Recent Price Observations")
+    st.markdown('<div class="minor-label">Recent Price Observations</div>', unsafe_allow_html=True)
     recent_prices = app_data.get_recent_price_table(price_frame, rows=10)
     st.dataframe(recent_prices, use_container_width=True, hide_index=True)
 
-    st.divider()
-    st.subheader("Machine Learning Signal Calibration")
-    st.caption(
-        "This layer combines historical market structure, downside/risk context, and sentiment into a "
-        "composite decision-support score. It is framed as a weighting engine for research, not a guaranteed forecast."
+    _render_section_intro(
+        "Model Layer",
+        "Machine learning signal calibration",
+        "This layer combines historical market structure, downside and volatility context, and sentiment into a composite research weighting engine rather than a guaranteed forecast.",
     )
 
     if not ml_summary["available"]:
@@ -659,7 +1066,7 @@ def main() -> None:
         model_summary = ml_summary.get("model_summary") or {}
         training_window = ml_summary.get("training_window") or {}
 
-        st.markdown("**Target Definition**")
+        st.markdown('<div class="minor-label">Target Definition</div>', unsafe_allow_html=True)
         st.info(target_definition.get("summary", "The current ML target definition is unavailable."))
 
         overview_columns = st.columns(4)
@@ -759,7 +1166,7 @@ def main() -> None:
                 use_container_width=True,
             )
 
-        st.markdown("**Interpretation**")
+        st.markdown('<div class="minor-label">Interpretation</div>', unsafe_allow_html=True)
         st.info(ml_summary["interpretation"])
 
         feature_importance = ml_summary.get("feature_importance") or []
@@ -785,7 +1192,7 @@ def main() -> None:
 
         pillar_weight_rows = ml_summary.get("pillar_weights") or []
         if pillar_weight_rows:
-            st.markdown("**Learned Pillar Weights**")
+            st.markdown('<div class="minor-label">Learned Pillar Weights</div>', unsafe_allow_html=True)
             st.dataframe(
                 [
                     {
@@ -798,8 +1205,11 @@ def main() -> None:
                 hide_index=True,
             )
 
-    st.divider()
-    st.subheader("News Sentiment")
+    _render_section_intro(
+        "Context Layer",
+        "News sentiment",
+        "Recent article activity and directional tone are preserved as-is, but presented as a distinct context block rather than another default dashboard segment.",
+    )
 
     sentiment_rows = app_data.load_recent_news_articles(
         st.session_state.active_ticker,
@@ -831,9 +1241,9 @@ def main() -> None:
         ):
             st.caption("Recent sentiment was loaded from the local database cache.")
 
-        st.caption(
-            "Recent news sentiment is based on stored headline/article records and a lightweight "
-            "lexical sentiment score intended for directional context rather than deep NLP inference."
+        st.markdown(
+            '<div class="inline-note">Recent news sentiment is based on stored headline and article records plus a lightweight lexical score intended for directional context rather than deep NLP inference.</div>',
+            unsafe_allow_html=True,
         )
         _render_sentiment_summary(sentiment_summary)
 
@@ -846,12 +1256,15 @@ def main() -> None:
         else:
             st.info("At least two publication dates are needed before a sentiment trend chart becomes meaningful.")
 
-        st.markdown("**Recent Headlines**")
+        st.markdown('<div class="minor-label">Recent Headlines</div>', unsafe_allow_html=True)
         recent_sentiment = app_data.get_recent_sentiment_table(sentiment_rows, rows=8)
         st.dataframe(recent_sentiment, use_container_width=True, hide_index=True)
 
-    st.divider()
-    st.subheader("Forward Simulation")
+    _render_section_intro(
+        "Scenario Layer",
+        "Forward simulation",
+        "Historical and ML-informed simulation outputs remain unchanged; this pass only sharpens the hierarchy so inputs, outcome metrics, and comparison views read more intentionally.",
+    )
 
     try:
         simulation_result = run_comparative_monte_carlo_simulation(
@@ -884,15 +1297,14 @@ def main() -> None:
         f"{int(simulation_inputs['observations']):,}",
     )
 
-    st.caption(
-        "The base scenario uses historical daily returns to estimate drift and volatility. "
-        "The ML-informed scenario overlays the latest model-implied expected return and current "
-        "risk proxy so analysts can compare a purely historical calibration with a current forecast context."
+    st.markdown(
+        '<div class="inline-note">The base scenario uses historical daily returns to estimate drift and volatility. The ML-informed scenario overlays the latest model-implied expected return and current risk proxy so analysts can compare a purely historical calibration with a current forecast context.</div>',
+        unsafe_allow_html=True,
     )
     _render_simulation_metrics(terminal_summary)
 
     if ml_summary["available"]:
-        st.markdown("**ML-Informed Scenario Overlay**")
+        st.markdown('<div class="minor-label">ML-Informed Scenario Overlay</div>', unsafe_allow_html=True)
         ml_input_columns = st.columns(4)
         ml_input_columns[0].metric(
             "ML-Implied Daily Drift",
