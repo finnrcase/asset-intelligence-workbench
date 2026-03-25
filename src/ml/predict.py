@@ -18,6 +18,8 @@ from src.ml.interpret import aggregate_feature_contributions_by_pillar
 from src.ml.interpret import compute_linear_feature_contributions
 from src.ml.interpret import serialize_rows
 from src.ml.score import classify_directional_signal
+from src.ml.score import sanitize_predicted_return
+from src.ml.score import sanitize_probability
 from src.ml.score import compute_composite_ml_score
 from src.ml.score import compute_confidence_score
 from src.ml.train import prepare_model_frame
@@ -78,10 +80,18 @@ def generate_predictions(
     result_rows: list[dict[str, Any]] = []
     for _, row in prediction_frame.iterrows():
         row_frame = _row_to_dataframe(row)
-        predicted_return = float(linear_model.predict(row_frame[feature_columns])[0])
-        comparison_predicted_return = float(comparison_model.predict(row_frame[feature_columns])[0])
-        probability_positive = float(classification_model.predict_proba(row_frame[feature_columns])[:, 1][0])
-        downside_probability = 1.0 - probability_positive
+        predicted_return = sanitize_predicted_return(
+            float(linear_model.predict(row_frame[feature_columns])[0]),
+            target_volatility_scale=target_scale,
+        )
+        comparison_predicted_return = sanitize_predicted_return(
+            float(comparison_model.predict(row_frame[feature_columns])[0]),
+            target_volatility_scale=target_scale,
+        )
+        probability_positive = sanitize_probability(
+            float(classification_model.predict_proba(row_frame[feature_columns])[:, 1][0])
+        )
+        downside_probability = sanitize_probability(1.0 - probability_positive)
         missing_features = [
             column_name
             for column_name in feature_columns

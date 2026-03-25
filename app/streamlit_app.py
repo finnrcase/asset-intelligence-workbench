@@ -297,6 +297,17 @@ div[data-baseweb="select"] svg,
     background: rgba(255, 255, 255, 0.88);
 }
 
+[data-testid="stSpinner"] {
+    color: #6f7780;
+}
+
+[data-testid="stSpinner"] * {
+    color: #6f7780 !important;
+    stroke: #6f7780 !important;
+    border-top-color: #6f7780 !important;
+    border-right-color: #6f7780 !important;
+}
+
 .app-hero {
     background:
         linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(248, 244, 238, 0.92)),

@@ -31,13 +31,13 @@ REPORT_CHART_SIZES = {
 }
 APP_CHART_COLORS = {
     "ink": "#18242f",
-    "muted": "#60707d",
-    "grid": "rgba(24, 36, 47, 0.08)",
-    "line": "rgba(24, 36, 47, 0.10)",
+    "muted": "#111111",
+    "grid": "rgba(0, 0, 0, 0.12)",
+    "line": "rgba(0, 0, 0, 0.58)",
     "surface": "rgba(255, 255, 255, 0)",
-    "primary": "#204a61",
-    "primary_soft": "rgba(32, 74, 97, 0.16)",
-    "secondary": "#5b6770",
+    "primary": "#111111",
+    "primary_soft": "rgba(0, 0, 0, 0.22)",
+    "secondary": "#111111",
     "positive": "#4f7c68",
     "positive_soft": "rgba(79, 124, 104, 0.14)",
     "negative": "#a05b52",
@@ -257,7 +257,7 @@ def create_sentiment_trend_chart(sentiment_trend: pd.DataFrame) -> go.Figure:
         go.Bar(
             x=sentiment_trend["published_date"],
             y=sentiment_trend["article_count"],
-            marker_color="rgba(96, 112, 125, 0.24)",
+            marker_color="rgba(0, 0, 0, 0.42)",
             name="Article Count",
             yaxis="y2",
         )

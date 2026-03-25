@@ -177,6 +177,15 @@ class ForecastingPipelineTests(unittest.TestCase):
             )
 
 
+    def test_prediction_outputs_are_bounded_for_storage(self) -> None:
+        from src.ml.score import sanitize_predicted_return, sanitize_probability
+
+        self.assertEqual(sanitize_predicted_return(-19.3097, target_volatility_scale=0.05), -0.20)
+        self.assertEqual(sanitize_predicted_return(3.2, target_volatility_scale=0.20), 0.60)
+        self.assertEqual(sanitize_probability(1.4), 1.0)
+        self.assertEqual(sanitize_probability(-0.3), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
 

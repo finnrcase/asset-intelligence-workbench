@@ -10,6 +10,32 @@ import numpy as np
 import pandas as pd
 
 
+def sanitize_probability(probability: float | None) -> float:
+    """Clamp directional probabilities to a valid unit interval."""
+
+    if probability is None or pd.isna(probability):
+        return float("nan")
+    return float(np.clip(float(probability), 0.0, 1.0))
+
+
+def sanitize_predicted_return(
+    predicted_return: float | None,
+    target_volatility_scale: float | None = None,
+    hard_cap: float = 0.60,
+) -> float:
+    """Bound model-implied returns to a plausible range for downstream use."""
+
+    if predicted_return is None or pd.isna(predicted_return):
+        return float("nan")
+
+    dynamic_cap = hard_cap
+    if target_volatility_scale is not None and not pd.isna(target_volatility_scale):
+        scale = max(float(target_volatility_scale), 0.02)
+        dynamic_cap = min(max(scale * 4.0, 0.20), hard_cap)
+
+    return float(np.clip(float(predicted_return), -dynamic_cap, dynamic_cap))
+
+
 def compute_composite_ml_score(
     predicted_return: float,
     probability_positive: float,
@@ -20,6 +46,8 @@ def compute_composite_ml_score(
 ) -> float:
     """Convert model outputs and pillar context into a bounded composite score."""
 
+    predicted_return = sanitize_predicted_return(predicted_return, target_volatility_scale)
+    probability_positive = sanitize_probability(probability_positive)
     scale = max(target_volatility_scale, 0.02)
     return_signal = math.tanh(predicted_return / scale)
     directional_probability_signal = (2.0 * probability_positive) - 1.0
@@ -51,11 +79,21 @@ def compute_confidence_score(
 ) -> float:
     """Build a bounded confidence indicator from signal magnitude and model agreement."""
 
+    predicted_return = sanitize_predicted_return(predicted_return, target_volatility_scale)
+    comparison_predicted_return = sanitize_predicted_return(comparison_predicted_return, target_volatility_scale)
+    probability_positive = sanitize_probability(probability_positive)
     scale = max(target_volatility_scale, 0.02)
     return_strength = min(abs(predicted_return) / scale, 1.0)
     probability_strength = min(abs((2.0 * probability_positive) - 1.0), 1.0)
     model_agreement = 1.0 - min(abs(predicted_return - comparison_predicted_return) / scale, 1.0)
-    confidence = (0.40 * return_strength) + (0.30 * probability_strength) + (0.30 * model_agreement)
+    regression_direction_probability = 1.0 / (1.0 + math.exp(-(predicted_return / scale)))
+    directional_alignment = 1.0 - min(abs(regression_direction_probability - probability_positive), 1.0)
+    confidence = (
+        (0.30 * return_strength)
+        + (0.20 * probability_strength)
+        + (0.25 * model_agreement)
+        + (0.25 * directional_alignment)
+    )
     return float(np.clip(confidence, 0.0, 1.0))
 
 
@@ -100,4 +138,9 @@ def prepare_prediction_history_frame(prediction_frame: pd.DataFrame) -> pd.DataF
     for column in numeric_columns:
         if column in frame.columns:
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    if "predicted_return_20d" in frame.columns:
+        frame["predicted_return_20d"] = frame["predicted_return_20d"].apply(sanitize_predicted_return)
+    for probability_column in ("downside_probability_20d", "probability_positive_20d", "confidence_score"):
+        if probability_column in frame.columns:
+            frame[probability_column] = frame[probability_column].apply(sanitize_probability)
     return frame.dropna(subset=["as_of_date"]).sort_values("as_of_date").reset_index(drop=True)

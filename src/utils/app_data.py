@@ -20,6 +20,8 @@ from src.database import queries as database_queries
 from src.database.connection import session_scope
 from src.data.ingestion.service import MarketDataIngestionService
 from src.data.queries import market_data_queries
+from src.ml.score import sanitize_predicted_return
+from src.ml.score import sanitize_probability
 
 
 DEFAULT_LOOKBACK_DAYS = 365
@@ -960,10 +962,14 @@ def build_ml_forecast_summary(ticker: str) -> dict[str, Any]:
             ),
         }
 
-    expected_return = _safe_float(snapshot.get("predicted_return_20d"))
-    downside_probability = _safe_float(snapshot.get("downside_probability_20d"))
-    probability_positive = _safe_float(snapshot.get("probability_positive_20d"))
-    confidence_score = _safe_float(snapshot.get("confidence_score"))
+    raw_expected_return = _safe_float(snapshot.get("predicted_return_20d"))
+    expected_return = None if raw_expected_return is None else sanitize_predicted_return(raw_expected_return)
+    raw_downside_probability = _safe_float(snapshot.get("downside_probability_20d"))
+    downside_probability = None if raw_downside_probability is None else sanitize_probability(raw_downside_probability)
+    raw_probability_positive = _safe_float(snapshot.get("probability_positive_20d"))
+    probability_positive = None if raw_probability_positive is None else sanitize_probability(raw_probability_positive)
+    raw_confidence_score = _safe_float(snapshot.get("confidence_score"))
+    confidence_score = None if raw_confidence_score is None else sanitize_probability(raw_confidence_score)
     composite_ml_score = _safe_float(snapshot.get("composite_ml_score"))
     history_score = _safe_float(snapshot.get("history_score"))
     risk_score = _safe_float(snapshot.get("risk_score"))
@@ -1656,10 +1662,14 @@ def build_ml_forecast_summary(ticker: str) -> dict[str, Any]:
             ),
         }
 
-    expected_return = _safe_float(snapshot.get("predicted_return_20d"))
-    downside_probability = _safe_float(snapshot.get("downside_probability_20d"))
-    probability_positive = _safe_float(snapshot.get("probability_positive_20d"))
-    confidence_score = _safe_float(snapshot.get("confidence_score"))
+    raw_expected_return = _safe_float(snapshot.get("predicted_return_20d"))
+    expected_return = None if raw_expected_return is None else sanitize_predicted_return(raw_expected_return)
+    raw_downside_probability = _safe_float(snapshot.get("downside_probability_20d"))
+    downside_probability = None if raw_downside_probability is None else sanitize_probability(raw_downside_probability)
+    raw_probability_positive = _safe_float(snapshot.get("probability_positive_20d"))
+    probability_positive = None if raw_probability_positive is None else sanitize_probability(raw_probability_positive)
+    raw_confidence_score = _safe_float(snapshot.get("confidence_score"))
+    confidence_score = None if raw_confidence_score is None else sanitize_probability(raw_confidence_score)
     composite_ml_score = _safe_float(snapshot.get("composite_ml_score"))
     history_score = _safe_float(snapshot.get("history_score"))
     risk_score = _safe_float(snapshot.get("risk_score"))

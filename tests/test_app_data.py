@@ -123,5 +123,44 @@ class AppDataTests(unittest.TestCase):
         mock_ensure.assert_called_once_with("SCHO")
 
 
+    @patch(
+        "src.utils.app_data.load_latest_ml_forecast",
+        return_value={
+            "ticker": "VOO",
+            "predicted_return_20d": -19.3097,
+            "probability_positive_20d": 0.8511,
+            "downside_probability_20d": 0.1489,
+            "composite_ml_score": -25.3,
+            "confidence_score": 0.61,
+            "history_score": -0.18,
+            "risk_score": -0.41,
+            "sentiment_score": -0.14,
+            "directional_signal": "Unfavorable",
+            "prediction_horizon_days": 20,
+            "selected_model_name": "ridge_regression",
+            "classification_model_name": "random_forest_classifier",
+            "target_name": "forward_return_20d",
+            "article_count_7d": 4,
+            "source_count_7d": 2,
+            "pillar_weights_json": [],
+            "feature_importance_json": [],
+            "top_features_json": [],
+        },
+    )
+    @patch("src.utils.app_data.load_ml_prediction_history", return_value=[])
+    def test_build_ml_forecast_summary_clamps_extreme_stored_return(
+        self,
+        _mock_history,
+        _mock_snapshot,
+    ) -> None:
+        summary = app_data.build_ml_forecast_summary("VOO")
+
+        self.assertTrue(summary["available"])
+        self.assertEqual(summary["snapshot"]["predicted_return_20d"], -0.60)
+        self.assertIn("-60.00%", summary["interpretation"])
+        self.assertNotIn("-1930.97%", summary["interpretation"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
