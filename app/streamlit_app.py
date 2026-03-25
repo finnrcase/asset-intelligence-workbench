@@ -560,6 +560,24 @@ def _render_asset_overview(metadata: dict[str, object], ticker: str, origin_labe
 
     latest_price = price_frame["analysis_price"].dropna().iloc[-1]
     latest_date = price_frame.index.max()
+    header_left, header_right = st.columns([4, 1])
+    with header_left:
+        st.markdown(
+            f"""
+            <div class="asset-pill">
+                <div class="hero-kicker">Active Coverage</div>
+                <div class="asset-ticker">{escape(ticker)}</div>
+                <div class="asset-subtitle">{escape(str(metadata.get("asset_name") or "Stored asset analytics view"))}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with header_right:
+        st.markdown(
+            f'<div style="display:flex; justify-content:flex-end;"><div class="status-badge">{escape(origin_label)}</div></div>',
+            unsafe_allow_html=True,
+        )
+
     overview_items = [
         ("Asset", metadata.get("asset_name") or ticker),
         ("Classification", metadata.get("asset_class") or "N/A"),
@@ -568,33 +586,18 @@ def _render_asset_overview(metadata: dict[str, object], ticker: str, origin_labe
         ("Latest Observation", str(latest_date.date()) if hasattr(latest_date, "date") else str(latest_date)),
         ("Latest Analysis Price", _format_number(float(latest_price))),
     ]
-    item_markup = "".join(
-        f"""
-        <div class="asset-pill">
-            <span class="pill-label">{escape(label)}</span>
-            <span class="pill-value">{escape(value)}</span>
-        </div>
-        """
-        for label, value in overview_items
-    )
-    st.markdown(
-        f"""
-        <section class="asset-shell">
-            <div class="asset-topline">
-                <div>
-                    <div class="hero-kicker">Active Coverage</div>
-                    <div class="asset-ticker">{escape(ticker)}</div>
-                    <div class="asset-subtitle">{escape(str(metadata.get("asset_name") or "Stored asset analytics view"))}</div>
+    pill_columns = st.columns(3)
+    for index, (label, value) in enumerate(overview_items):
+        with pill_columns[index % 3]:
+            st.markdown(
+                f"""
+                <div class="asset-pill">
+                    <span class="pill-label">{escape(label)}</span>
+                    <span class="pill-value">{escape(str(value))}</span>
                 </div>
-                <div class="status-badge">{escape(origin_label)}</div>
-            </div>
-            <div class="asset-pill-grid">
-                {item_markup}
-            </div>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 def _render_simulation_metrics(terminal_summary: dict[str, float]) -> None:
