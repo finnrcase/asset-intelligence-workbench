@@ -161,6 +161,29 @@ body, p, li, label, [data-testid="stMarkdownContainer"] {
     line-height: 1.58;
 }
 
+[data-testid="stDataFrame"] *,
+[data-testid="stTable"] *,
+.stPlotlyChart *,
+[data-testid="stMetric"] *,
+[data-testid="stAlert"] *,
+[data-testid="stStatusWidget"] *,
+.hero-pill *,
+.asset-pill *,
+.asset-shell *,
+.inline-note *,
+div[data-baseweb="select"] *,
+.stTextInput *,
+.stNumberInput *,
+.stSelectbox *,
+[data-testid="stSidebar"] .stButton > button:not([kind="primary"]),
+[data-testid="stSidebar"] .stDownloadButton > button,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span {
+    color: var(--ink) !important;
+}
+
 [data-testid="stMetric"] {
     background: linear-gradient(180deg, var(--panel-strong), rgba(252, 250, 246, 0.96));
     border: 1px solid var(--line);
@@ -170,11 +193,12 @@ body, p, li, label, [data-testid="stMarkdownContainer"] {
 }
 
 [data-testid="stMetricLabel"] {
-    color: var(--muted-soft);
+    color: var(--ink);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.72rem;
     font-weight: 650;
+    opacity: 0.8;
 }
 
 [data-testid="stMetricValue"] {
@@ -212,6 +236,7 @@ div[data-baseweb="select"] > div,
     border-radius: 16px !important;
     border: 1px solid rgba(24, 36, 47, 0.1) !important;
     background: rgba(255, 255, 255, 0.92) !important;
+    color: var(--ink) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
@@ -297,12 +322,13 @@ div[data-baseweb="select"] > div,
 
 .pill-label {
     display: block;
-    color: var(--muted-soft);
+    color: var(--ink);
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin-bottom: 0.28rem;
     font-weight: 650;
+    opacity: 0.75;
 }
 
 .pill-value {
@@ -340,9 +366,10 @@ div[data-baseweb="select"] > div,
 }
 
 .asset-subtitle {
-    color: var(--muted);
+    color: var(--ink);
     font-size: 0.98rem;
     margin-top: 0.24rem;
+    opacity: 0.82;
 }
 
 .status-badge {
@@ -376,19 +403,21 @@ div[data-baseweb="select"] > div,
 
 .section-copy {
     max-width: 52rem;
-    color: var(--muted);
+    color: var(--ink);
     font-size: 0.98rem;
     line-height: 1.6;
     margin: 0;
+    opacity: 0.82;
 }
 
 .minor-label {
-    color: var(--muted-soft);
+    color: var(--ink);
     font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-weight: 700;
     margin-bottom: 0.55rem;
+    opacity: 0.78;
 }
 
 .inline-note {
@@ -397,7 +426,8 @@ div[data-baseweb="select"] > div,
     border-radius: 18px;
     padding: 0.85rem 1rem;
     margin: 0.45rem 0 1rem;
-    color: var(--muted);
+    color: var(--ink);
+    opacity: 0.9;
 }
 </style>
 """
