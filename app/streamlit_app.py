@@ -682,8 +682,7 @@ def _render_header() -> None:
             <h1 class="hero-title">Asset Intelligence Workbench</h1>
             <p class="hero-copy">
                 A focused analytics workspace for stored market data, risk framing, model calibration,
-                and analyst-ready reporting. The workflow stays intact; the presentation is tuned to feel
-                calmer, sharper, and more deliberate.
+                and analyst-ready reporting.
             </p>
             <div class="hero-pill-row">
                 <div class="hero-pill">
@@ -1115,7 +1114,7 @@ def main() -> None:
     _render_section_intro(
         "Market Frame",
         "Performance and risk at a glance",
-        "Top-line return and risk diagnostics stay exactly the same, but they are grouped into a clearer analytical opening with cleaner chart framing.",
+        "",
     )
     _render_kpis(price_frame, risk_summary)
 
@@ -1303,7 +1302,7 @@ def main() -> None:
     _render_section_intro(
         "Context Layer",
         "News sentiment",
-        "Recent article activity and directional tone are preserved as-is, but presented as a distinct context block rather than another default dashboard segment.",
+        "",
     )
 
     sentiment_rows = app_data.load_recent_news_articles(
@@ -1357,7 +1356,7 @@ def main() -> None:
     _render_section_intro(
         "Scenario Layer",
         "Forward simulation",
-        "Historical and ML-informed simulation outputs remain unchanged; this pass only sharpens the hierarchy so inputs, outcome metrics, and comparison views read more intentionally.",
+        "",
     )
 
     try:
