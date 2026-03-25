@@ -159,6 +159,33 @@ def _build_runtime_sqlite_path(sqlite_path: Path) -> Path:
     return (runtime_root / sqlite_path.name).resolve(strict=False)
 
 
+def _build_ephemeral_runtime_sqlite_path(sqlite_path: Path) -> Path:
+    """Return a unique per-process fallback path for SQLite startup recovery."""
+
+    ephemeral_root = Path(
+        tempfile.mkdtemp(prefix=f"{DEFAULT_RUNTIME_SQLITE_DIRNAME}-")
+    ).resolve(strict=False)
+    return (ephemeral_root / sqlite_path.name).resolve(strict=False)
+
+
+def _prepare_sqlite_candidate(candidate_path: Path, source_path: Path) -> Path:
+    """Ensure a candidate SQLite path is writable, copying the source when possible."""
+
+    _ensure_directory_writable(candidate_path.parent)
+    if source_path.exists() and source_path != candidate_path and not candidate_path.exists():
+        try:
+            shutil.copy2(source_path, candidate_path)
+        except OSError as copy_exc:
+            LOGGER.warning(
+                "Unable to copy SQLite database from %s to %s; continuing with a fresh runtime database. Copy error: %s",
+                source_path,
+                candidate_path,
+                copy_exc,
+            )
+    _ensure_sqlite_file_writable(candidate_path)
+    return candidate_path
+
+
 def prepare_sqlite_runtime(sqlite_path: Path, database_url: str) -> Path:
     """
     Return a writable SQLite path for runtime use.
@@ -177,30 +204,34 @@ def prepare_sqlite_runtime(sqlite_path: Path, database_url: str) -> Path:
         _ensure_sqlite_file_writable(resolved_path)
         return resolved_path
     except DatabaseConfigurationError as exc:
-        runtime_path = _build_runtime_sqlite_path(resolved_path)
-        if runtime_path == resolved_path:
-            raise
+        fallback_paths = [
+            _build_runtime_sqlite_path(resolved_path),
+            _build_ephemeral_runtime_sqlite_path(resolved_path),
+        ]
+        last_error: DatabaseConfigurationError = exc
 
-        LOGGER.warning(
-            "SQLite path %s is not writable; falling back to runtime path %s. Original error: %s",
-            resolved_path,
-            runtime_path,
-            exc,
-        )
+        for runtime_path in fallback_paths:
+            if runtime_path == resolved_path:
+                continue
 
-        _ensure_directory_writable(runtime_path.parent)
-        if resolved_path.exists() and resolved_path != runtime_path and not runtime_path.exists():
+            LOGGER.warning(
+                "SQLite path %s is not writable; falling back to runtime path %s. Original error: %s",
+                resolved_path,
+                runtime_path,
+                last_error,
+            )
+
             try:
-                shutil.copy2(resolved_path, runtime_path)
-            except OSError as copy_exc:
+                return _prepare_sqlite_candidate(runtime_path, resolved_path)
+            except DatabaseConfigurationError as runtime_exc:
                 LOGGER.warning(
-                    "Unable to copy SQLite database from %s to %s; continuing with a fresh runtime database. Copy error: %s",
-                    resolved_path,
+                    "SQLite runtime fallback path %s was also not writable. Runtime error: %s",
                     runtime_path,
-                    copy_exc,
+                    runtime_exc,
                 )
-        _ensure_sqlite_file_writable(runtime_path)
-        return runtime_path
+                last_error = runtime_exc
+
+        raise last_error
 
 
 def _can_create_temp_file(directory: Path) -> bool:

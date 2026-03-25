@@ -120,12 +120,13 @@ class ConfigTests(unittest.TestCase):
         sqlite_path = TEST_ROOT / "write_probe.db"
 
         with patch("src.utils.config._build_runtime_sqlite_path", return_value=sqlite_path.resolve(strict=False)):
-            with patch("src.utils.config.sqlite3.connect", side_effect=sqlite3.OperationalError("readonly")):
-                with self.assertRaises(config.DatabaseConfigurationError) as context:
-                    config.validate_sqlite_runtime(
-                        sqlite_path=sqlite_path,
-                        database_url=f"sqlite:///{sqlite_path}",
-                    )
+            with patch("src.utils.config._build_ephemeral_runtime_sqlite_path", return_value=sqlite_path.resolve(strict=False)):
+                with patch("src.utils.config.sqlite3.connect", side_effect=sqlite3.OperationalError("readonly")):
+                    with self.assertRaises(config.DatabaseConfigurationError) as context:
+                        config.validate_sqlite_runtime(
+                            sqlite_path=sqlite_path,
+                            database_url=f"sqlite:///{sqlite_path}",
+                        )
 
         self.assertIn(str(sqlite_path), str(context.exception))
         self.assertIn("not writable", str(context.exception))
@@ -134,12 +135,13 @@ class ConfigTests(unittest.TestCase):
         sqlite_path = TEST_ROOT / "write_probe_oserror.db"
 
         with patch("src.utils.config._build_runtime_sqlite_path", return_value=sqlite_path.resolve(strict=False)):
-            with patch("src.utils.config.sqlite3.connect", side_effect=PermissionError("access denied")):
-                with self.assertRaises(config.DatabaseConfigurationError) as context:
-                    config.validate_sqlite_runtime(
-                        sqlite_path=sqlite_path,
-                        database_url=f"sqlite:///{sqlite_path}",
-                    )
+            with patch("src.utils.config._build_ephemeral_runtime_sqlite_path", return_value=sqlite_path.resolve(strict=False)):
+                with patch("src.utils.config.sqlite3.connect", side_effect=PermissionError("access denied")):
+                    with self.assertRaises(config.DatabaseConfigurationError) as context:
+                        config.validate_sqlite_runtime(
+                            sqlite_path=sqlite_path,
+                            database_url=f"sqlite:///{sqlite_path}",
+                        )
 
         self.assertIn(str(sqlite_path), str(context.exception))
         self.assertIn("not writable", str(context.exception))
@@ -250,6 +252,47 @@ class ConfigTests(unittest.TestCase):
                 connection.commit()
             finally:
                 connection.close()
+        finally:
+            self._cleanup_tree(temp_root)
+
+    def test_prepare_sqlite_runtime_uses_ephemeral_runtime_path_when_primary_runtime_fails(self) -> None:
+        temp_root = TEST_ROOT / f"ephemeral_runtime_fallback_{uuid4().hex}"
+        source_path = temp_root / "readonly" / "asset_intelligence.db"
+        primary_runtime_root = temp_root / "runtime_primary"
+        ephemeral_runtime_root = temp_root / "runtime_ephemeral"
+
+        try:
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text("", encoding="utf-8")
+
+            original_ensure_directory_writable = config._ensure_directory_writable
+            original_ensure_writable = config._ensure_sqlite_file_writable
+
+            def fake_ensure_directory_writable(directory: Path) -> None:
+                if directory == primary_runtime_root.resolve(strict=False):
+                    raise config.DatabaseConfigurationError(
+                        f"SQLite parent directory is not writable: {directory}"
+                    )
+                original_ensure_directory_writable(directory)
+
+            def fake_ensure_writable(sqlite_path: Path) -> None:
+                if sqlite_path == source_path.resolve(strict=False):
+                    raise config.DatabaseConfigurationError(
+                        f"SQLite database file is not writable: {sqlite_path}"
+                    )
+                original_ensure_writable(sqlite_path)
+
+            with patch("src.utils.config._build_runtime_sqlite_path", return_value=(primary_runtime_root / source_path.name).resolve(strict=False)):
+                with patch("src.utils.config._build_ephemeral_runtime_sqlite_path", return_value=(ephemeral_runtime_root / source_path.name).resolve(strict=False)):
+                    with patch("src.utils.config._ensure_directory_writable", side_effect=fake_ensure_directory_writable):
+                        with patch("src.utils.config._ensure_sqlite_file_writable", side_effect=fake_ensure_writable):
+                            runtime_path = config.prepare_sqlite_runtime(
+                                sqlite_path=source_path,
+                                database_url=f"sqlite:///{source_path.resolve(strict=False)}",
+                            )
+
+            self.assertEqual(runtime_path, (ephemeral_runtime_root / source_path.name).resolve(strict=False))
+            self.assertTrue(runtime_path.exists())
         finally:
             self._cleanup_tree(temp_root)
 
