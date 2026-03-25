@@ -1307,12 +1307,14 @@ def main() -> None:
             st.plotly_chart(
                 charts.create_price_history_chart(price_frame),
                 use_container_width=True,
+                key="outputs_price_history_chart",
             )
         with chart_right:
             st.markdown("#### Cumulative Return")
             st.plotly_chart(
                 charts.create_cumulative_return_chart(return_frame.dropna(subset=["cumulative_return"])),
                 use_container_width=True,
+                key="outputs_cumulative_return_chart",
             )
 
         rolling_volatility_clean = rolling_volatility.dropna()
@@ -1326,6 +1328,7 @@ def main() -> None:
             st.plotly_chart(
                 charts.create_rolling_volatility_chart(rolling_volatility_clean),
                 use_container_width=True,
+                key="outputs_rolling_volatility_chart",
             )
 
         _render_minor_label("Recent Price Observations")
@@ -1400,6 +1403,7 @@ def main() -> None:
                     st.plotly_chart(
                         charts.create_ml_score_history_chart(prediction_history),
                         use_container_width=True,
+                        key="outputs_ml_score_history_chart",
                     )
                 else:
                     _render_latest_ml_snapshot(ml_summary)
@@ -1409,6 +1413,7 @@ def main() -> None:
                 st.plotly_chart(
                     charts.create_pillar_contribution_chart(ml_summary.get("pillar_contributions") or []),
                     use_container_width=True,
+                    key="outputs_pillar_contribution_chart",
                 )
 
             _render_minor_label("Interpretation")
@@ -1422,6 +1427,7 @@ def main() -> None:
                     st.plotly_chart(
                         charts.create_feature_importance_chart(feature_importance[:8]),
                         use_container_width=True,
+                        key="outputs_feature_importance_chart",
                     )
                 with feature_chart_right:
                     st.markdown("#### Feature Detail")
@@ -1491,6 +1497,7 @@ def main() -> None:
                 st.plotly_chart(
                     charts.create_sentiment_trend_chart(sentiment_trend),
                     use_container_width=True,
+                    key="outputs_sentiment_trend_chart",
                 )
             else:
                 st.info("At least two publication dates are needed before a sentiment trend chart becomes meaningful.")
@@ -1537,18 +1544,21 @@ def main() -> None:
                 st.plotly_chart(
                     charts.create_monte_carlo_paths_chart(historical_simulation["paths"]),
                     use_container_width=True,
+                    key="outputs_historical_paths_chart",
                 )
             with simulation_chart_right:
                 st.markdown("#### Historical Terminal Distribution")
                 st.plotly_chart(
                     charts.create_terminal_distribution_chart(historical_simulation["paths"]),
                     use_container_width=True,
+                    key="outputs_historical_terminal_distribution_chart",
                 )
 
             st.markdown("#### Historical Percentile Bands")
             st.plotly_chart(
                 charts.create_percentile_band_chart(historical_simulation["bands"]),
                 use_container_width=True,
+                key="outputs_historical_percentile_band_chart",
             )
 
             if ml_summary["available"]:
@@ -1561,12 +1571,14 @@ def main() -> None:
                             ml_informed_simulation["bands"],
                         ),
                         use_container_width=True,
+                        key="outputs_simulation_comparison_chart",
                     )
                 with comparison_right:
                     st.markdown("#### ML-Informed Terminal Distribution")
                     st.plotly_chart(
                         charts.create_terminal_distribution_chart(ml_informed_simulation["paths"]),
                         use_container_width=True,
+                        key="outputs_ml_informed_terminal_distribution_chart",
                     )
 
                 comparison_summary = st.columns(3)
@@ -1703,6 +1715,7 @@ def main() -> None:
             st.plotly_chart(
                 charts.create_price_history_chart(price_frame),
                 use_container_width=True,
+                key="summary_price_history_chart",
             )
         with summary_chart_right:
             if simulation_error is None:
@@ -1710,6 +1723,7 @@ def main() -> None:
                 st.plotly_chart(
                     charts.create_percentile_band_chart(simulation_result["historical"]["bands"]),
                     use_container_width=True,
+                    key="summary_percentile_band_chart",
                 )
             else:
                 sentiment_trend = app_data.get_sentiment_trend_frame(sentiment_rows)
@@ -1718,6 +1732,7 @@ def main() -> None:
                     st.plotly_chart(
                         charts.create_sentiment_trend_chart(sentiment_trend),
                         use_container_width=True,
+                        key="summary_sentiment_trend_chart",
                     )
                 else:
                     st.info("Summary charts will expand as additional sentiment history becomes available.")
