@@ -23,6 +23,7 @@ LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "app.db"
+LEGACY_SQLITE_PATH = PROJECT_ROOT / "data" / "processed" / "asset_intelligence.db"
 
 
 class DatabaseConfigurationError(RuntimeError):
@@ -50,6 +51,24 @@ def _resolve_project_path(path_value: str | Path) -> Path:
     return path.resolve(strict=False)
 
 
+def _sqlite_path_has_assets(sqlite_path: Path) -> bool:
+    """Return True when the SQLite file exists and contains at least one stored asset."""
+
+    if not sqlite_path.exists():
+        return False
+    try:
+        connection = sqlite3.connect(sqlite_path)
+        try:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) FROM assets")
+            row = cursor.fetchone()
+            return bool(row and row[0] and int(row[0]) > 0)
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return False
+
+
 def _resolve_sqlite_path(database_url: str | None = None) -> Path:
     """Resolve the SQLite file path from env vars or the local default."""
 
@@ -65,7 +84,17 @@ def _resolve_sqlite_path(database_url: str | None = None) -> Path:
             )
         return _resolve_project_path(parsed_url.database)
 
-    return DEFAULT_SQLITE_PATH.resolve(strict=False)
+    default_path = DEFAULT_SQLITE_PATH.resolve(strict=False)
+    legacy_path = LEGACY_SQLITE_PATH.resolve(strict=False)
+    if _sqlite_path_has_assets(legacy_path) and not _sqlite_path_has_assets(default_path):
+        LOGGER.info(
+            "Default SQLite database %s is empty; falling back to populated legacy database %s.",
+            default_path,
+            legacy_path,
+        )
+        return legacy_path
+
+    return default_path
 
 
 def _ensure_directory_writable(directory: Path) -> None:
