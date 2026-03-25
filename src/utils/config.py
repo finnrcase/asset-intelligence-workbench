@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import sqlite3
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,7 @@ LOGGER = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "app.db"
 LEGACY_SQLITE_PATH = PROJECT_ROOT / "data" / "processed" / "asset_intelligence.db"
+DEFAULT_RUNTIME_SQLITE_DIRNAME = "asset-intelligence-workbench"
 
 
 class DatabaseConfigurationError(RuntimeError):
@@ -133,6 +136,59 @@ def _ensure_sqlite_file_writable(sqlite_path: Path) -> None:
         ) from exc
 
 
+def _get_runtime_sqlite_root() -> Path:
+    """Return the writable runtime directory used for fallback SQLite files."""
+
+    configured_root = os.getenv("SQLITE_RUNTIME_PATH") or os.getenv("SQLITE_RUNTIME_DIR")
+    if configured_root:
+        return _resolve_project_path(configured_root)
+
+    return Path(tempfile.gettempdir()) / DEFAULT_RUNTIME_SQLITE_DIRNAME
+
+
+def _build_runtime_sqlite_path(sqlite_path: Path) -> Path:
+    """Return a writable fallback path for a SQLite file."""
+
+    runtime_root = _get_runtime_sqlite_root().resolve(strict=False)
+    return (runtime_root / sqlite_path.name).resolve(strict=False)
+
+
+def prepare_sqlite_runtime(sqlite_path: Path, database_url: str) -> Path:
+    """
+    Return a writable SQLite path for runtime use.
+
+    When the configured path is not writable, the app falls back to a runtime
+    directory (for example `/tmp` on hosted deployments) and copies the
+    existing database there when possible.
+    """
+
+    _validate_sqlite_database_url(database_url)
+
+    resolved_path = sqlite_path.expanduser().resolve(strict=False)
+
+    try:
+        _ensure_directory_writable(resolved_path.parent)
+        _ensure_sqlite_file_writable(resolved_path)
+        return resolved_path
+    except DatabaseConfigurationError as exc:
+        runtime_path = _build_runtime_sqlite_path(resolved_path)
+        if runtime_path == resolved_path:
+            raise
+
+        LOGGER.warning(
+            "SQLite path %s is not writable; falling back to runtime path %s. Original error: %s",
+            resolved_path,
+            runtime_path,
+            exc,
+        )
+
+        _ensure_directory_writable(runtime_path.parent)
+        if resolved_path.exists() and resolved_path != runtime_path and not runtime_path.exists():
+            shutil.copy2(resolved_path, runtime_path)
+        _ensure_sqlite_file_writable(runtime_path)
+        return runtime_path
+
+
 def _can_create_temp_file(directory: Path) -> bool:
     """Return True when a normal temporary file can be created and removed."""
 
@@ -228,13 +284,7 @@ def validate_sqlite_runtime(sqlite_path: Path, database_url: str) -> None:
     rather than later during ingestion.
     """
 
-    _validate_sqlite_database_url(database_url)
-
-    resolved_path = sqlite_path.expanduser().resolve(strict=False)
-    parent_directory = resolved_path.parent
-
-    _ensure_directory_writable(parent_directory)
-    _ensure_sqlite_file_writable(resolved_path)
+    prepare_sqlite_runtime(sqlite_path, database_url)
 
 
 def get_resolved_sqlite_path(database_url: str | None = None) -> Path:
@@ -247,10 +297,17 @@ def get_resolved_sqlite_path(database_url: str | None = None) -> Path:
     return resolved_path
 
 
-def log_sqlite_startup_diagnostics(database_url: str | None = None) -> dict[str, Any]:
+def log_sqlite_startup_diagnostics(
+    database_url: str | None = None,
+    sqlite_path: Path | None = None,
+) -> dict[str, Any]:
     """Log the resolved SQLite path and basic filesystem/write diagnostics."""
 
-    resolved_path = get_resolved_sqlite_path(database_url)
+    resolved_path = (
+        sqlite_path.expanduser().resolve(strict=False)
+        if sqlite_path is not None
+        else get_resolved_sqlite_path(database_url)
+    )
     diagnostics = get_sqlite_startup_diagnostics(resolved_path)
     LOGGER.info("SQLite database URL: %s", database_url or _build_default_database_url(resolved_path))
     LOGGER.info("SQLite database parent directory: %s", diagnostics["parent_directory"])
@@ -306,7 +363,9 @@ def get_config() -> AppConfig:
     prices_freshness_hours = int(os.getenv("MARKET_DATA_PRICES_FRESHNESS_HOURS", "6"))
 
     if database_url.startswith("sqlite"):
-        log_sqlite_startup_diagnostics(database_url)
+        sqlite_path = prepare_sqlite_runtime(sqlite_path, database_url)
+        database_url = _build_default_database_url(sqlite_path)
+        log_sqlite_startup_diagnostics(database_url, sqlite_path=sqlite_path)
 
     config = AppConfig(
         project_root=PROJECT_ROOT,
@@ -323,8 +382,5 @@ def get_config() -> AppConfig:
         finnhub_api_key=os.getenv("FINNHUB_API_KEY"),
         newsapi_api_key=os.getenv("NEWSAPI_API_KEY") or os.getenv("NEWS_API_KEY"),
     )
-
-    if config.is_sqlite:
-        validate_sqlite_runtime(config.sqlite_path, config.database_url)
 
     return config
