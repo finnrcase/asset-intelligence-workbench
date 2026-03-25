@@ -27,6 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "app.db"
 LEGACY_SQLITE_PATH = PROJECT_ROOT / "data" / "processed" / "asset_intelligence.db"
 DEFAULT_RUNTIME_SQLITE_DIRNAME = "asset-intelligence-workbench"
+SQLITE_IN_MEMORY_URL = "sqlite://"
 
 
 class DatabaseConfigurationError(RuntimeError):
@@ -422,13 +423,41 @@ def get_config() -> AppConfig:
 
     if database_url.startswith("sqlite"):
         original_sqlite_path = sqlite_path
-        sqlite_path = prepare_sqlite_runtime(sqlite_path, database_url)
-        database_url = _build_default_database_url(sqlite_path)
-        LOGGER.info(
-            "SQLite runtime fallback used: %s",
-            sqlite_path != original_sqlite_path,
-        )
-        log_sqlite_startup_diagnostics(database_url, sqlite_path=sqlite_path)
+        try:
+            sqlite_path = prepare_sqlite_runtime(sqlite_path, database_url)
+            database_url = _build_default_database_url(sqlite_path)
+            LOGGER.info(
+                "SQLite runtime fallback used: %s",
+                sqlite_path != original_sqlite_path,
+            )
+            log_sqlite_startup_diagnostics(database_url, sqlite_path=sqlite_path)
+        except DatabaseConfigurationError as exc:
+            fallback_display_path = get_default_writable_db_path(original_sqlite_path.name)
+            LOGGER.warning(
+                "No writable filesystem SQLite path could be established. "
+                "Falling back to in-memory SQLite for this process. Original error: %s",
+                exc,
+            )
+            sqlite_path = fallback_display_path
+            database_url = SQLITE_IN_MEMORY_URL
+            LOGGER.info("SQLite runtime fallback used: true")
+            LOGGER.info("SQLite database URL: %s", database_url)
+            LOGGER.info("SQLite database parent directory: %s", sqlite_path.parent)
+            LOGGER.info(
+                "SQLite startup diagnostics: %s",
+                {
+                    "resolved_path": str(sqlite_path),
+                    "parent_directory": str(sqlite_path.parent),
+                    "parent_exists": sqlite_path.parent.exists(),
+                    "parent_writable": os.access(sqlite_path.parent, os.W_OK) if sqlite_path.parent.exists() else False,
+                    "db_exists": False,
+                    "db_writable": None,
+                    "temp_file_create_delete": _can_create_temp_file(sqlite_path.parent) if sqlite_path.parent.exists() else False,
+                    "sqlite_write_probe": False,
+                    "sqlite_sidefiles": False,
+                    "in_memory_fallback": True,
+                },
+            )
 
     config = AppConfig(
         project_root=PROJECT_ROOT,

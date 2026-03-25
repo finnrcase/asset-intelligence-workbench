@@ -331,6 +331,32 @@ class ConfigTests(unittest.TestCase):
         finally:
             self._cleanup_tree(temp_root)
 
+    def test_get_config_falls_back_to_in_memory_sqlite_when_no_writable_file_path_exists(self) -> None:
+        temp_root = TEST_ROOT / f"in_memory_runtime_fallback_{uuid4().hex}"
+        source_path = temp_root / "readonly" / "engine_target.db"
+
+        try:
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text("", encoding="utf-8")
+
+            with patch.dict(
+                os.environ,
+                {
+                    "SQLITE_DB_PATH": str(source_path),
+                },
+                clear=False,
+            ):
+                with patch("src.utils.config.prepare_sqlite_runtime", side_effect=config.DatabaseConfigurationError("no writable sqlite path")):
+                    app_config = config.get_config()
+
+            self.assertEqual(app_config.database_url, config.SQLITE_IN_MEMORY_URL)
+            self.assertEqual(
+                app_config.sqlite_path,
+                config.get_default_writable_db_path(source_path.name),
+            )
+        finally:
+            self._cleanup_tree(temp_root)
+
     def test_get_config_uses_sqlite_db_path_for_sqlite_engine_target(self) -> None:
         explicit_path = TEST_ROOT / "explicit" / "engine_target.db"
 
