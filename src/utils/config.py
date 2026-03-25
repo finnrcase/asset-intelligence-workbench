@@ -152,11 +152,16 @@ def _get_runtime_sqlite_root() -> Path:
     return Path(tempfile.gettempdir()) / DEFAULT_RUNTIME_SQLITE_DIRNAME
 
 
+def get_default_writable_db_path(sqlite_filename: str = "app.db") -> Path:
+    """Return the default writable SQLite path for hosted or restricted runtimes."""
+
+    return (_get_runtime_sqlite_root().resolve(strict=False) / sqlite_filename).resolve(strict=False)
+
+
 def _build_runtime_sqlite_path(sqlite_path: Path) -> Path:
     """Return a writable fallback path for a SQLite file."""
 
-    runtime_root = _get_runtime_sqlite_root().resolve(strict=False)
-    return (runtime_root / sqlite_path.name).resolve(strict=False)
+    return get_default_writable_db_path(sqlite_path.name)
 
 
 def _build_ephemeral_runtime_sqlite_path(sqlite_path: Path) -> Path:
@@ -416,8 +421,13 @@ def get_config() -> AppConfig:
     prices_freshness_hours = int(os.getenv("MARKET_DATA_PRICES_FRESHNESS_HOURS", "6"))
 
     if database_url.startswith("sqlite"):
+        original_sqlite_path = sqlite_path
         sqlite_path = prepare_sqlite_runtime(sqlite_path, database_url)
         database_url = _build_default_database_url(sqlite_path)
+        LOGGER.info(
+            "SQLite runtime fallback used: %s",
+            sqlite_path != original_sqlite_path,
+        )
         log_sqlite_startup_diagnostics(database_url, sqlite_path=sqlite_path)
 
     config = AppConfig(

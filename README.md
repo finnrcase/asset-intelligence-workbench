@@ -13,10 +13,20 @@ https://asset-intelligence-workbench-eq2zbxelprxwjnnxendyqp.streamlit.app/
 The local development SQLite database lives at `data/app.db` by default.
 
 - Override it with `SQLITE_DB_PATH` when needed.
+- Override the writable runtime fallback root with `SQLITE_RUNTIME_DIR` or `SQLITE_RUNTIME_PATH` when needed.
 - Configure market-data freshness with `MARKET_DATA_METADATA_FRESHNESS_HOURS` and `MARKET_DATA_PRICES_FRESHNESS_HOURS`.
 - The app resolves relative SQLite paths against the repository root, not the current working directory.
-- The app validates the resolved SQLite path on startup and logs the fully resolved absolute path.
-- Startup fails early if the parent directory is not writable, the database file cannot be created, or SQLite cannot open the file for writes.
+- The app validates the resolved SQLite path on startup and logs the configured URL, resolved absolute path, and whether a runtime fallback was used.
+- If the configured SQLite path is not writable, the app logs a warning and falls back to a writable runtime location before failing hard.
+- The fallback order is: configured path -> runtime path -> unique ephemeral temp directory.
+
+### Hosted deployments
+
+Hosted environments such as Streamlit Cloud often mount the repository in a read-only location. In that case the app will automatically move SQLite runtime writes to a writable temp/app-data directory instead of writing into the deployed repo.
+
+- Local development keeps the configured path when it is writable.
+- Hosted or restricted runtimes automatically switch to the writable runtime fallback when needed.
+- A hard startup failure now occurs only if no writable SQLite location can be established at all.
 
 ### Market Data Architecture
 
@@ -49,7 +59,7 @@ Older local database files from the previous layout can also be deleted if you a
 - `data/processed/asset_intelligence.db-shm`
 - `data/processed/asset_intelligence.db-journal`
 
-If you are deploying to a hosted environment with a read-only repo mount, choose a writable location explicitly with `SQLITE_DB_PATH` before startup.
+If you are deploying to a hosted environment with a read-only repo mount, you can still set `SQLITE_DB_PATH` explicitly, but in most cases the built-in runtime fallback will handle this automatically. If you want to control the hosted write location, set `SQLITE_RUNTIME_DIR`.
 
 ### SQLite write debug
 
