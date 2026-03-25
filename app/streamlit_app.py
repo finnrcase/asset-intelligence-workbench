@@ -134,7 +134,8 @@ APP_THEME_CSS = """
     font-weight: 650;
     letter-spacing: 0.02em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--ink);
+    opacity: 0.88;
 }
 
 .block-container {
@@ -159,6 +160,15 @@ body, p, li, label, [data-testid="stMarkdownContainer"] {
 [data-testid="stMarkdownContainer"] p {
     color: var(--muted);
     line-height: 1.58;
+}
+
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] div,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] * {
+    color: var(--ink) !important;
+    opacity: 0.88;
 }
 
 [data-testid="stDataFrame"] *,
@@ -238,6 +248,22 @@ div[data-baseweb="select"] > div,
     background: rgba(255, 255, 255, 0.92) !important;
     color: var(--ink) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+div[data-baseweb="select"] input,
+div[data-baseweb="select"] span,
+div[data-baseweb="select"] svg,
+.stTextInput input::placeholder,
+.stTextInput textarea::placeholder {
+    color: var(--ink) !important;
+    fill: var(--ink) !important;
+    opacity: 0.62 !important;
+}
+
+[data-testid="stSidebar"] div[data-baseweb="select"] > div,
+[data-testid="stSidebar"] .stTextInput > div > div > input {
+    color: var(--ink) !important;
+    background: rgba(255, 255, 255, 0.96) !important;
 }
 
 [data-testid="stSlider"] [role="slider"] {
@@ -401,6 +427,12 @@ div[data-baseweb="select"] > div,
     letter-spacing: -0.03em;
 }
 
+.section-title-text,
+.minor-label-text,
+.inline-note-text {
+    margin: 0;
+}
+
 .section-copy {
     max-width: 52rem;
     color: var(--ink);
@@ -495,12 +527,30 @@ def _render_section_intro(kicker: str, title: str, description: str) -> None:
 
     st.markdown(
         f"""
-        <section class="section-intro">
+        <div class="section-intro">
             <div class="section-kicker">{escape(kicker)}</div>
-            <h2 class="section-title">{escape(title)}</h2>
+            <p class="section-title section-title-text">{escape(title)}</p>
             <p class="section-copy">{escape(description)}</p>
-        </section>
+        </div>
         """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_minor_label(text: str) -> None:
+    """Render a small uppercase label without relying on raw div fragments."""
+
+    st.markdown(
+        f'<p class="minor-label minor-label-text">{escape(text)}</p>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_inline_note(text: str) -> None:
+    """Render a framed explanatory note with safer HTML markup."""
+
+    st.markdown(
+        f'<p class="inline-note inline-note-text">{escape(text)}</p>',
         unsafe_allow_html=True,
     )
 
@@ -1078,7 +1128,7 @@ def main() -> None:
             use_container_width=True,
         )
 
-    st.markdown('<div class="minor-label">Recent Price Observations</div>', unsafe_allow_html=True)
+    _render_minor_label("Recent Price Observations")
     recent_prices = app_data.get_recent_price_table(price_frame, rows=10)
     st.dataframe(recent_prices, use_container_width=True, hide_index=True)
 
@@ -1096,7 +1146,7 @@ def main() -> None:
         model_summary = ml_summary.get("model_summary") or {}
         training_window = ml_summary.get("training_window") or {}
 
-        st.markdown('<div class="minor-label">Target Definition</div>', unsafe_allow_html=True)
+        _render_minor_label("Target Definition")
         st.info(target_definition.get("summary", "The current ML target definition is unavailable."))
 
         overview_columns = st.columns(4)
@@ -1196,7 +1246,7 @@ def main() -> None:
                 use_container_width=True,
             )
 
-        st.markdown('<div class="minor-label">Interpretation</div>', unsafe_allow_html=True)
+        _render_minor_label("Interpretation")
         st.info(ml_summary["interpretation"])
 
         feature_importance = ml_summary.get("feature_importance") or []
@@ -1222,7 +1272,7 @@ def main() -> None:
 
         pillar_weight_rows = ml_summary.get("pillar_weights") or []
         if pillar_weight_rows:
-            st.markdown('<div class="minor-label">Learned Pillar Weights</div>', unsafe_allow_html=True)
+            _render_minor_label("Learned Pillar Weights")
             st.dataframe(
                 [
                     {
@@ -1271,9 +1321,8 @@ def main() -> None:
         ):
             st.caption("Recent sentiment was loaded from the local database cache.")
 
-        st.markdown(
-            '<div class="inline-note">Recent news sentiment is based on stored headline and article records plus a lightweight lexical score intended for directional context rather than deep NLP inference.</div>',
-            unsafe_allow_html=True,
+        _render_inline_note(
+            "Recent news sentiment is based on stored headline and article records plus a lightweight lexical score intended for directional context rather than deep NLP inference."
         )
         _render_sentiment_summary(sentiment_summary)
 
@@ -1286,7 +1335,7 @@ def main() -> None:
         else:
             st.info("At least two publication dates are needed before a sentiment trend chart becomes meaningful.")
 
-        st.markdown('<div class="minor-label">Recent Headlines</div>', unsafe_allow_html=True)
+        _render_minor_label("Recent Headlines")
         recent_sentiment = app_data.get_recent_sentiment_table(sentiment_rows, rows=8)
         st.dataframe(recent_sentiment, use_container_width=True, hide_index=True)
 
@@ -1327,14 +1376,13 @@ def main() -> None:
         f"{int(simulation_inputs['observations']):,}",
     )
 
-    st.markdown(
-        '<div class="inline-note">The base scenario uses historical daily returns to estimate drift and volatility. The ML-informed scenario overlays the latest model-implied expected return and current risk proxy so analysts can compare a purely historical calibration with a current forecast context.</div>',
-        unsafe_allow_html=True,
+    _render_inline_note(
+        "The base scenario uses historical daily returns to estimate drift and volatility. The ML-informed scenario overlays the latest model-implied expected return and current risk proxy so analysts can compare a purely historical calibration with a current forecast context."
     )
     _render_simulation_metrics(terminal_summary)
 
     if ml_summary["available"]:
-        st.markdown('<div class="minor-label">ML-Informed Scenario Overlay</div>', unsafe_allow_html=True)
+        _render_minor_label("ML-Informed Scenario Overlay")
         ml_input_columns = st.columns(4)
         ml_input_columns[0].metric(
             "ML-Implied Daily Drift",
