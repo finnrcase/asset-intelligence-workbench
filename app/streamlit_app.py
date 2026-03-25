@@ -951,6 +951,15 @@ def main() -> None:
     price_frame = app_data.prepare_price_history_frame(price_rows)
 
     if metadata is None or price_frame.empty:
+        status = st.session_state.asset_status or {}
+        if status.get("status") == "post_ingest_readback_failed":
+            st.error(status.get("message", "The app could not read back the newly loaded asset data."))
+            st.info(
+                "The ticker was resolved through the provider, but the local database readback did not complete cleanly. "
+                "Load the ticker again once the database write is available."
+            )
+            st.session_state.active_ticker = ""
+            return
         _render_empty_state(
             f"No historical price data is available for {st.session_state.active_ticker} in the local database."
         )

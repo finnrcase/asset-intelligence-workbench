@@ -62,6 +62,15 @@ def load_price_history(ticker: str) -> list[dict[str, Any]]:
     return market_data_queries.get_price_history(ticker)
 
 
+def _has_stored_price_history(ticker: str) -> bool:
+    """Return True when the ticker has at least one stored historical price row."""
+
+    normalized_ticker = normalize_app_ticker(ticker)
+    if not normalized_ticker:
+        return False
+    return bool(load_price_history(normalized_ticker))
+
+
 def normalize_app_ticker(ticker: str) -> str:
     """Normalize user-entered ticker text into the project storage format."""
 
@@ -103,12 +112,30 @@ def ingest_single_ticker(
         ticker=normalized_ticker,
         lookback_days=lookback_days,
     )
-    return {
+
+    response = {
         "success": result.success,
         "ticker": result.ticker,
         "status": result.status,
         "message": result.message,
     }
+    if not result.success:
+        return response
+
+    metadata = load_asset_metadata(normalized_ticker)
+    has_prices = _has_stored_price_history(normalized_ticker)
+    if metadata is None or not has_prices:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "post_ingest_readback_failed",
+            "message": (
+                f"{normalized_ticker} was fetched, but the app could not read back the stored asset data "
+                "from the local database yet. Please try loading the ticker again."
+            ),
+        }
+
+    return response
 
 
 def resolve_asset_for_app(
