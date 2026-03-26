@@ -86,31 +86,34 @@ LOGGER = logging.getLogger(__name__)
 APP_THEME_CSS = """
 <style>
 :root {
-    --app-bg: #f4f6f8;
-    --page-bg: #eef2f6;
-    --surface: #ffffff;
-    --surface-muted: #f8fafc;
-    --surface-soft: #f1f5f9;
-    --ink: #0f1720;
-    --muted: #536273;
-    --muted-soft: #6d7d8f;
-    --line: #d8e1ea;
-    --line-strong: #c7d3e1;
-    --accent: #5f98c6;
-    --accent-strong: #3f79aa;
-    --accent-soft: #e8f1f8;
-    --success: #2d6a4f;
-    --danger: #a33f3f;
-    --shadow-soft: 0 10px 28px rgba(15, 23, 32, 0.06);
-    --shadow-panel: 0 4px 14px rgba(15, 23, 32, 0.05);
-    --radius-xl: 22px;
+    --app-bg: #0b1118;
+    --page-bg: #0e151d;
+    --surface: #121b24;
+    --surface-raised: #17212d;
+    --surface-soft: #1b2835;
+    --surface-accent: #132334;
+    --ink: #f4f8fc;
+    --muted: #a3b1c2;
+    --muted-soft: #7f90a4;
+    --line: rgba(148, 163, 184, 0.18);
+    --line-strong: rgba(147, 197, 253, 0.34);
+    --accent: #8ec5ff;
+    --accent-strong: #6ab3ff;
+    --accent-soft: rgba(142, 197, 255, 0.14);
+    --success: #7fd4b3;
+    --danger: #f0a0a0;
+    --shadow-soft: 0 24px 64px rgba(3, 8, 14, 0.34);
+    --shadow-panel: 0 16px 40px rgba(3, 8, 14, 0.28);
+    --radius-xl: 24px;
     --radius-lg: 18px;
     --radius-md: 14px;
     --radius-sm: 10px;
 }
 
 .stApp {
-    background: linear-gradient(180deg, var(--page-bg) 0%, var(--app-bg) 100%);
+    background:
+        radial-gradient(circle at top left, rgba(104, 169, 235, 0.10), transparent 28%),
+        linear-gradient(180deg, var(--page-bg) 0%, var(--app-bg) 100%);
     color: var(--ink);
 }
 
@@ -119,8 +122,8 @@ APP_THEME_CSS = """
 }
 
 [data-testid="stHeader"] {
-    background: rgba(244, 246, 248, 0.85);
-    backdrop-filter: blur(8px);
+    background: rgba(11, 17, 24, 0.72);
+    backdrop-filter: blur(14px);
 }
 
 [data-testid="stSidebar"] {
@@ -128,27 +131,27 @@ APP_THEME_CSS = """
 }
 
 .block-container {
-    max-width: 1520px;
-    padding-top: 1.65rem;
-    padding-bottom: 4rem;
+    max-width: 1500px;
+    padding-top: 1.5rem;
+    padding-bottom: 3.5rem;
 }
 
-h1, h2, h3 {
+h1, h2, h3, h4, h5, h6 {
     color: var(--ink);
 }
 
 h1 {
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    letter-spacing: -0.02em;
+    font-family: "SF Pro Display", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: -0.03em;
 }
 
 body, p, li, label, [data-testid="stMarkdownContainer"] {
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-family: "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 
 [data-testid="stMarkdownContainer"] p {
     color: var(--muted);
-    line-height: 1.55;
+    line-height: 1.58;
 }
 
 [data-testid="stDataFrame"] *,
@@ -163,6 +166,7 @@ body, p, li, label, [data-testid="stMarkdownContainer"] {
 .panel-shell *,
 .summary-card *,
 .inline-note *,
+.workflow-shell *,
 div[data-baseweb="select"] *,
 .stTextInput *,
 .stNumberInput *,
@@ -172,7 +176,7 @@ div[data-baseweb="select"] *,
 }
 
 [data-testid="stMetric"] {
-    background: var(--surface);
+    background: linear-gradient(180deg, rgba(23, 33, 45, 0.94), rgba(18, 27, 36, 0.98));
     border: 1px solid var(--line);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-panel);
@@ -180,171 +184,178 @@ div[data-baseweb="select"] *,
 }
 
 [data-testid="stMetricLabel"] {
-    color: var(--muted);
+    color: var(--muted) !important;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.72rem;
     font-weight: 650;
-    opacity: 0.9;
+    opacity: 0.92;
 }
 
 [data-testid="stMetricValue"] {
-    color: var(--ink);
+    color: var(--ink) !important;
     font-size: 1.35rem;
     letter-spacing: -0.03em;
 }
 
 .stButton > button, .stDownloadButton > button {
-    border-radius: 10px;
-    min-height: 2.8rem;
-    border: 1px solid var(--line-strong);
-    background: var(--surface);
+    border-radius: 12px;
+    min-height: 2.95rem;
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(23, 33, 45, 0.98), rgba(18, 27, 36, 0.98));
     color: var(--ink);
-    font-weight: 600;
+    font-weight: 650;
     box-shadow: none;
     transition: all 140ms ease;
 }
 
-.stButton > button[kind="primary"] {
-    background: var(--accent-strong);
-    color: white;
-    border-color: var(--accent-strong);
+.stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {
+    background: linear-gradient(180deg, rgba(117, 188, 255, 0.98), rgba(84, 160, 236, 0.98));
+    color: #06111d !important;
+    border-color: rgba(144, 205, 255, 0.68);
 }
 
 .stButton > button:hover, .stDownloadButton > button:hover {
-    border-color: var(--accent);
-    background: var(--surface-muted);
+    border-color: var(--line-strong);
+    background: linear-gradient(180deg, rgba(27, 40, 53, 1), rgba(19, 30, 40, 1));
 }
 
-div[data-baseweb="select"] > div,
+.stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover {
+    background: linear-gradient(180deg, rgba(145, 207, 255, 1), rgba(106, 179, 255, 1));
+}
+
+.stButton > button:focus, .stDownloadButton > button:focus {
+    border-color: var(--line-strong);
+    box-shadow: 0 0 0 0.18rem rgba(142, 197, 255, 0.16);
+}
+
 .stTextInput > div > div > input,
-.stNumberInput input {
-    border-radius: 10px !important;
-    border: 1px solid var(--line-strong) !important;
-    background: var(--surface) !important;
+.stNumberInput input,
+div[data-baseweb="select"] > div,
+textarea {
+    border-radius: 12px !important;
+    border: 1px solid var(--line) !important;
+    background: linear-gradient(180deg, rgba(23, 33, 45, 0.96), rgba(18, 27, 36, 0.98)) !important;
     color: var(--ink) !important;
     box-shadow: none !important;
 }
 
+.stTextInput input::placeholder,
+.stTextInput textarea::placeholder,
 div[data-baseweb="select"] input,
 div[data-baseweb="select"] span,
-div[data-baseweb="select"] svg,
-.stTextInput input::placeholder,
-.stTextInput textarea::placeholder {
-    color: var(--ink) !important;
-    fill: var(--ink) !important;
-    opacity: 0.62 !important;
+div[data-baseweb="select"] svg {
+    color: var(--muted) !important;
+    fill: var(--muted) !important;
+    opacity: 0.9 !important;
 }
 
 [data-testid="stTabs"] [role="tablist"] {
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: 0.6rem;
+    margin-bottom: 1.15rem;
 }
 
 [data-testid="stTabs"] [role="tab"] {
-    height: 2.75rem;
-    background: rgba(255, 255, 255, 0.72);
+    height: 2.95rem;
+    background: rgba(18, 27, 36, 0.88);
     border: 1px solid var(--line);
     border-radius: 999px;
-    padding: 0 1rem;
+    padding: 0 1.15rem;
     color: var(--muted);
-    font-weight: 600;
+    font-weight: 650;
 }
 
 [data-testid="stTabs"] [role="tab"][aria-selected="true"] {
-    background: var(--surface);
+    background: linear-gradient(180deg, rgba(24, 36, 49, 0.98), rgba(19, 29, 40, 0.98));
     color: var(--ink);
-    border-color: var(--accent);
-    box-shadow: var(--shadow-panel);
+    border-color: var(--line-strong);
+    box-shadow: inset 0 0 0 1px rgba(142, 197, 255, 0.08), var(--shadow-panel);
 }
 
 [data-testid="stSlider"] [role="slider"] {
-    box-shadow: 0 0 0 5px rgba(95, 152, 198, 0.18);
+    box-shadow: 0 0 0 5px rgba(142, 197, 255, 0.16);
 }
 
 [data-testid="stSliderTrack"] {
-    background: linear-gradient(90deg, var(--accent-soft), rgba(95, 152, 198, 0.4));
+    background: linear-gradient(90deg, rgba(142, 197, 255, 0.28), rgba(106, 179, 255, 0.54));
 }
 
 .stPlotlyChart,
 [data-testid="stDataFrame"],
 [data-testid="stTable"] {
-    background: var(--surface);
+    background: linear-gradient(180deg, rgba(20, 29, 39, 0.98), rgba(18, 27, 36, 0.98));
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-panel);
-    padding: 0.65rem 0.75rem;
+    padding: 0.7rem 0.8rem;
 }
 
 [data-testid="stAlert"] {
     border-radius: var(--radius-md);
     border: 1px solid var(--line);
     box-shadow: none;
+    background: rgba(18, 27, 36, 0.92);
 }
 
 [data-testid="stStatusWidget"] {
     border-radius: var(--radius-lg);
     border: 1px solid var(--line);
-    background: var(--surface);
+    background: linear-gradient(180deg, rgba(20, 29, 39, 0.96), rgba(18, 27, 36, 0.98));
 }
 
-[data-testid="stSpinner"] {
-    color: var(--muted);
-}
-
-[data-testid="stSpinner"] * {
+[data-testid="stSpinner"], [data-testid="stSpinner"] * {
     color: var(--muted) !important;
-    stroke: var(--muted) !important;
-    border-top-color: var(--muted) !important;
-    border-right-color: var(--muted) !important;
+    stroke: var(--accent) !important;
+    border-top-color: var(--accent) !important;
+    border-right-color: var(--accent) !important;
 }
 
 .app-hero {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+    background: linear-gradient(180deg, rgba(23, 33, 45, 0.94), rgba(16, 24, 33, 0.98));
     border: 1px solid var(--line);
-    border-radius: 22px;
+    border-radius: 24px;
     box-shadow: var(--shadow-soft);
-    padding: 1.5rem 1.6rem 1.2rem;
+    padding: 1.55rem 1.65rem 1.25rem;
     margin-bottom: 1rem;
 }
 
 .hero-kicker, .section-kicker {
-    color: var(--muted-soft);
+    color: var(--accent);
     font-size: 0.74rem;
     text-transform: uppercase;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.18em;
     font-weight: 700;
 }
 
 .hero-title {
     margin: 0.45rem 0 0.35rem;
-    font-size: clamp(1.95rem, 4vw, 2.7rem);
-    line-height: 1.05;
+    font-size: clamp(2.05rem, 4vw, 2.8rem);
+    line-height: 1.02;
 }
 
 .hero-copy {
-    max-width: 58rem;
-    font-size: 0.98rem;
-    line-height: 1.6;
+    max-width: 60rem;
+    font-size: 1rem;
+    line-height: 1.68;
     color: var(--muted);
     margin: 0;
 }
 
 .hero-pill-row, .asset-pill-grid, .summary-grid {
     display: grid;
-    gap: 0.75rem;
+    gap: 0.8rem;
     margin-top: 1.2rem;
 }
 
 .hero-pill-row {
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
-.hero-pill, .asset-pill {
-    background: var(--surface-soft);
+.hero-pill, .asset-pill, .workflow-step {
+    background: linear-gradient(180deg, rgba(24, 36, 49, 0.98), rgba(19, 29, 40, 0.98));
     border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 0.9rem 1rem;
+    border-radius: 16px;
+    padding: 0.95rem 1rem;
 }
 
 .pill-label {
@@ -362,14 +373,60 @@ div[data-baseweb="select"] svg,
     color: var(--ink);
     font-size: 1rem;
     font-weight: 600;
-    line-height: 1.35;
+    line-height: 1.4;
 }
 
-.asset-shell {
-    background: var(--surface);
+.workflow-shell {
+    background: linear-gradient(180deg, rgba(23, 33, 45, 0.94), rgba(16, 24, 33, 0.98));
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    box-shadow: var(--shadow-panel);
+    padding: 1rem 1.05rem;
+    margin: 0.4rem 0 1.15rem;
+}
+
+.workflow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+}
+
+.workflow-index {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-soft);
+    border: 1px solid rgba(142, 197, 255, 0.28);
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-bottom: 0.7rem;
+}
+
+.workflow-title {
+    color: var(--ink);
+    font-size: 0.96rem;
+    font-weight: 650;
+    margin-bottom: 0.25rem;
+}
+
+.workflow-copy {
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
+.asset-shell, .panel-shell, .summary-card {
+    background: linear-gradient(180deg, rgba(23, 33, 45, 0.94), rgba(18, 27, 36, 0.98));
     border: 1px solid var(--line);
     border-radius: 18px;
     box-shadow: var(--shadow-panel);
+}
+
+.asset-shell, .panel-shell {
     padding: 1rem 1.1rem;
     margin-bottom: 1rem;
 }
@@ -384,18 +441,20 @@ div[data-baseweb="select"] svg,
 }
 
 .asset-ticker {
-    font-size: 1.85rem;
+    font-size: 1.95rem;
     line-height: 1;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.05em;
     color: var(--ink);
     font-weight: 700;
 }
 
+.asset-subtitle, .section-copy, .panel-copy, .summary-meta, .control-note, .minor-label {
+    color: var(--muted) !important;
+}
+
 .asset-subtitle {
-    color: var(--ink);
     font-size: 0.98rem;
     margin-top: 0.24rem;
-    opacity: 0.82;
 }
 
 .status-badge {
@@ -404,7 +463,7 @@ div[data-baseweb="select"] svg,
     border-radius: 999px;
     padding: 0.42rem 0.72rem;
     background: var(--accent-soft);
-    color: var(--accent-strong);
+    color: var(--accent) !important;
     font-size: 0.78rem;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -416,13 +475,13 @@ div[data-baseweb="select"] svg,
 }
 
 .section-intro {
-    margin: 1.4rem 0 0.9rem;
+    margin: 1.45rem 0 0.95rem;
     padding: 0 0.1rem;
 }
 
 .section-title {
-    margin: 0.18rem 0 0.25rem;
-    font-size: 1.35rem;
+    margin: 0.2rem 0 0.25rem;
+    font-size: 1.38rem;
     line-height: 1.15;
     letter-spacing: -0.03em;
 }
@@ -434,41 +493,26 @@ div[data-baseweb="select"] svg,
 }
 
 .section-copy {
-    max-width: 52rem;
-    color: var(--ink);
-    font-size: 0.94rem;
-    line-height: 1.6;
+    max-width: 54rem;
+    font-size: 0.95rem;
+    line-height: 1.62;
     margin: 0;
-    opacity: 0.82;
 }
 
 .minor-label {
-    color: var(--ink);
     font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-weight: 700;
     margin-bottom: 0.55rem;
-    opacity: 0.78;
 }
 
 .inline-note {
-    background: var(--surface-soft);
+    background: linear-gradient(180deg, rgba(20, 31, 42, 0.96), rgba(16, 25, 34, 0.98));
     border: 1px solid var(--line);
     border-radius: 12px;
     padding: 0.85rem 1rem;
     margin: 0.45rem 0 1rem;
-    color: var(--ink);
-    opacity: 0.9;
-}
-
-.panel-shell {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 18px;
-    box-shadow: var(--shadow-panel);
-    padding: 1rem 1.1rem;
-    margin-bottom: 1rem;
 }
 
 .panel-title {
@@ -480,7 +524,6 @@ div[data-baseweb="select"] svg,
 
 .panel-copy {
     margin: 0.3rem 0 0;
-    color: var(--muted);
     font-size: 0.92rem;
     line-height: 1.5;
 }
@@ -490,10 +533,6 @@ div[data-baseweb="select"] svg,
 }
 
 .summary-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 16px;
-    box-shadow: var(--shadow-panel);
     padding: 1rem;
 }
 
@@ -513,16 +552,8 @@ div[data-baseweb="select"] svg,
     line-height: 1.15;
 }
 
-.summary-meta {
-    margin-top: 0.4rem;
-    color: var(--muted);
-    font-size: 0.88rem;
-    line-height: 1.45;
-}
-
 .control-note {
     margin-top: 0.45rem;
-    color: var(--muted);
     font-size: 0.88rem;
 }
 </style>
@@ -744,21 +775,21 @@ def _render_header() -> None:
             <div class="hero-kicker">Asset Intelligence Platform</div>
             <h1 class="hero-title">Asset Intelligence Workbench</h1>
             <p class="hero-copy">
-                A focused analytics workspace for stored market data, risk framing, model calibration,
-                and analyst-ready reporting.
+                A premium analysis workspace for market coverage, scenario review, machine learning insight,
+                and report-ready investment research.
             </p>
             <div class="hero-pill-row">
                 <div class="hero-pill">
-                    <span class="pill-label">Built For</span>
-                    <span class="pill-value">Finance, strategy, and infra research teams</span>
+                    <span class="pill-label">Designed For</span>
+                    <span class="pill-value">Investor relations, finance, strategy, and research teams</span>
                 </div>
                 <div class="hero-pill">
-                    <span class="pill-label">Core Lens</span>
-                    <span class="pill-value">Market history, risk context, ML signals, and reporting</span>
+                    <span class="pill-label">Coverage</span>
+                    <span class="pill-value">Stored market data, risk context, sentiment, and model signals</span>
                 </div>
                 <div class="hero-pill">
-                    <span class="pill-label">Operating Model</span>
-                    <span class="pill-value">Single-asset analysis on top of local SQL-backed retrieval</span>
+                    <span class="pill-label">Workflow</span>
+                    <span class="pill-value">Load an asset, run analysis, and deliver a polished PDF report</span>
                 </div>
             </div>
         </section>
@@ -771,6 +802,40 @@ def _render_empty_state(message: str) -> None:
     """Render a consistent empty-state message."""
 
     st.info(message)
+
+
+def _render_workflow_steps() -> None:
+    """Render the customer-facing workflow guide for the Inputs tab."""
+
+    st.markdown(
+        """
+        <section class="workflow-shell">
+            <div class="workflow-grid">
+                <div class="workflow-step">
+                    <div class="workflow-index">1</div>
+                    <div class="workflow-title">Enter Asset</div>
+                    <div class="workflow-copy">Select stored coverage or enter a ticker to prepare the active asset.</div>
+                </div>
+                <div class="workflow-step">
+                    <div class="workflow-index">2</div>
+                    <div class="workflow-title">Load Asset</div>
+                    <div class="workflow-copy">Pull the selected asset into the workspace and confirm data availability.</div>
+                </div>
+                <div class="workflow-step">
+                    <div class="workflow-index">3</div>
+                    <div class="workflow-title">Run Analysis</div>
+                    <div class="workflow-copy">Generate the latest charts, metrics, simulation views, and decision support outputs.</div>
+                </div>
+                <div class="workflow-step">
+                    <div class="workflow-index">4</div>
+                    <div class="workflow-title">Generate Report</div>
+                    <div class="workflow-copy">Create the PDF deliverable, then download it from the Outputs workspace.</div>
+                </div>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _render_panel_header(title: str, description: str | None = None) -> None:
@@ -1112,21 +1177,28 @@ def main() -> None:
 
     with tab_input:
         _render_section_intro(
-            "Control Center",
-            "Configure the active analysis workspace",
-            "Select stored coverage or ingest a new ticker, set simulation parameters, and prepare report generation from a single operating panel.",
+            "Inputs",
+            "Follow the analysis workflow",
+            "Enter an asset, load the dataset, run the analysis, and prepare the report from one guided workspace.",
         )
 
         if st.session_state.asset_status:
             _render_status_message(st.session_state.asset_status)
 
+        _render_section_intro(
+            "Workflow",
+            "Complete the review in four steps",
+            "The workflow below mirrors the intended sequence so the next action is always clear.",
+        )
+        _render_workflow_steps()
+
         control_left, control_right = st.columns([1.35, 1], gap="large")
 
         with control_left:
             _render_section_intro(
-                "Asset Selection",
-                "Choose the active asset",
-                "Load from the local database or enter a new market symbol for on-demand ingestion.",
+                "Step 1: Enter Asset",
+                "Choose the asset for this workspace",
+                "Select stored coverage or enter a new ticker to bring the asset into the platform.",
             )
             if available_assets:
                 dropdown_options = list(asset_labels.keys())
@@ -1135,23 +1207,23 @@ def main() -> None:
                     default_index = dropdown_options.index(label_by_ticker[st.session_state.active_ticker])
 
                 selected_label = st.selectbox(
-                    "Stored Asset",
+                    "Stored Asset Coverage",
                     options=dropdown_options,
                     index=default_index,
-                    help="Load an asset that already exists in the local database.",
+                    help="Load an asset that already exists in stored coverage.",
                 )
                 selected_ticker = asset_labels[selected_label]
             else:
-                st.caption("No stored assets are currently available.")
+                st.caption("No stored asset coverage is currently available.")
 
             manual_ticker = st.text_input(
-                "Manual Ticker",
+                "Enter Asset",
                 value="",
                 placeholder="Examples: AAPL, SPY, BTC-USD",
-                help="If provided, this input takes precedence over the dropdown and will fetch the asset if needed.",
+                help="This field takes precedence over the stored asset selector when you want to load a new ticker.",
             )
             st.caption(
-                "Use the stored asset selector for local coverage, or enter a new ticker to fetch and ingest it on demand."
+                "Choose a stored asset for existing coverage, or enter a ticker to load fresh market data."
             )
 
             action_columns = st.columns(3)
@@ -1168,15 +1240,15 @@ def main() -> None:
                 )
             with action_columns[2]:
                 generate_report_clicked = st.button(
-                    "Generate PDF Report",
+                    "Generate Report",
                     use_container_width=True,
                 )
 
         with control_right:
             _render_section_intro(
                 "Simulation Settings",
-                "Set the forward analysis range",
-                "Adjust the forecast horizon and scenario count used in the analysis and report outputs.",
+                "Tune the scenario review range",
+                "Set the forecast horizon and scenario count used in the analysis workspace and PDF report.",
             )
             forecast_horizon = st.slider(
                 "Forecast Horizon (Trading Days)",
@@ -1197,14 +1269,14 @@ def main() -> None:
                 key="simulation_count_input",
             )
             st.markdown(
-                '<p class="control-note">Adjust the forecast range and scenario count used in the analysis and report output.</p>',
+                '<p class="control-note">These settings shape the scenario outputs used across the analysis workspace and report.</p>',
                 unsafe_allow_html=True,
             )
 
         _render_section_intro(
-            "Stored Coverage",
-            "Current assets available in the local database",
-            "Review the current stored asset universe before selecting the next analysis target.",
+            "Asset Status",
+            "Review current stored coverage",
+            "Confirm what is already available in the platform before loading or refreshing the next asset.",
         )
         if available_assets:
             st.dataframe(
@@ -1213,7 +1285,7 @@ def main() -> None:
                 hide_index=True,
             )
         else:
-            st.info("No stored assets are currently available in the local database.")
+            st.info("No stored asset coverage is currently available in the platform.")
 
     if load_clicked:
         requested_ticker = (manual_ticker or selected_ticker or st.session_state.active_ticker or "").strip().upper()
@@ -1221,7 +1293,7 @@ def main() -> None:
             f"Loading asset data for {requested_ticker or 'selected asset'}...",
             expanded=True,
         )
-        load_status_indicator.write("Checking the local database and resolving the requested ticker.")
+        load_status_indicator.write("Checking stored coverage and resolving the requested asset.")
         resolution = app_data.resolve_asset_for_app(
             selected_ticker=selected_ticker,
             manual_ticker=manual_ticker,
@@ -1250,7 +1322,7 @@ def main() -> None:
     if not st.session_state.active_ticker:
         with tab_outputs:
             _render_empty_state(
-                "Select an existing asset or enter a ticker to fetch one into the local database."
+                "Select an existing asset or enter a ticker to bring one into the platform."
             )
         return
 
@@ -1262,7 +1334,7 @@ def main() -> None:
             with tab_outputs:
                 st.error(status.get("message", "The app could not read back the newly loaded asset data."))
                 st.info(
-                    "The ticker was resolved through the provider, but the local database readback did not complete cleanly. "
+                    "The ticker was resolved through the provider, but the stored data readback did not complete cleanly. "
                     "Load the ticker again once the database write is available."
                 )
             st.session_state.active_ticker = ""
@@ -1406,7 +1478,7 @@ def main() -> None:
                 LOGGER.info("Run analysis simulation started: ticker=%s", st.session_state.active_ticker)
                 analysis_status_indicator.write("Preparing output tables and simulation results.")
                 data_origin = (st.session_state.asset_status or {}).get("status", "database")
-                origin_label = "Newly Ingested" if data_origin == "ingested" else "Local Database"
+                origin_label = "Newly Ingested" if data_origin == "ingested" else "Stored Coverage"
                 sentiment_rows = app_data.load_recent_news_articles(
                     st.session_state.active_ticker,
                     limit=25,
@@ -1477,9 +1549,9 @@ def main() -> None:
 
     with tab_outputs:
         _render_section_intro(
-            "Report Workspace",
-            "Deliverables and analysis outputs",
-            "Review generated deliverables first, then work through the complete analytical output stack using the active asset and current model settings.",
+            "Analysis Outputs",
+            "Reports, charts, and decision support views",
+            "Review the latest deliverables first, then move through the full analysis workspace for the active asset.",
         )
 
         if st.session_state.report_status:
@@ -1536,7 +1608,7 @@ def main() -> None:
                 )
         else:
             st.info(
-                "Generate a PDF report from the Input tab to make the latest deliverable available for download here."
+                "Generate a report from the Inputs tab to make the latest PDF available for download here."
             )
 
         if st.session_state.open_report_status:
@@ -1555,11 +1627,11 @@ def main() -> None:
         if not has_current_outputs:
             if analysis_outputs is None:
                 _render_empty_state(
-                    "Run Analysis from the Inputs tab to generate charts, metrics, tables, and simulation outputs for the active asset."
+                    "Run Analysis from the Inputs tab to populate this workspace with the latest charts, metrics, tables, and scenario outputs."
                 )
             else:
                 st.info(
-                    "The active inputs changed since the last completed analysis. Run Analysis again from the Inputs tab to refresh the output workspace."
+                    "The active asset settings changed since the last completed run. Run Analysis again from the Inputs tab to refresh the outputs."
                 )
             return
 
@@ -2100,7 +2172,7 @@ def main() -> None:
         )
 
     data_origin = (st.session_state.asset_status or {}).get("status", "database")
-    origin_label = "Newly Ingested" if data_origin == "ingested" else "Local Database"
+    origin_label = "Newly Ingested" if data_origin == "ingested" else "Stored Coverage"
     _render_asset_overview(
         metadata=metadata,
         ticker=st.session_state.active_ticker,

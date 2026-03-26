@@ -30,20 +30,22 @@ REPORT_CHART_SIZES = {
     "simulation_comparison": (10.8, 5.0),
 }
 APP_CHART_COLORS = {
-    "ink": "#18242f",
-    "muted": "#111111",
-    "grid": "rgba(0, 0, 0, 0.12)",
-    "line": "rgba(0, 0, 0, 0.58)",
-    "surface": "rgba(255, 255, 255, 0)",
-    "primary": "#111111",
-    "primary_soft": "rgba(0, 0, 0, 0.22)",
-    "secondary": "#111111",
-    "positive": "#4f7c68",
-    "positive_soft": "rgba(79, 124, 104, 0.14)",
-    "negative": "#a05b52",
-    "negative_soft": "rgba(160, 91, 82, 0.14)",
-    "warm": "#b98249",
-    "warm_soft": "rgba(185, 130, 73, 0.16)",
+    "ink": "#f4f8fc",
+    "muted": "#b3c0cf",
+    "grid": "rgba(148, 163, 184, 0.18)",
+    "line": "rgba(148, 163, 184, 0.42)",
+    "surface": "rgba(0, 0, 0, 0)",
+    "primary": "#8ec5ff",
+    "primary_soft": "rgba(142, 197, 255, 0.18)",
+    "secondary": "#d9e7f5",
+    "positive": "#7fd4b3",
+    "positive_soft": "rgba(127, 212, 179, 0.18)",
+    "negative": "#f0a0a0",
+    "negative_soft": "rgba(240, 160, 160, 0.18)",
+    "warm": "#c7d9ff",
+    "warm_soft": "rgba(199, 217, 255, 0.20)",
+    "marker_fill": "#101821",
+    "bar_soft": "rgba(163, 177, 194, 0.34)",
 }
 
 
@@ -52,7 +54,7 @@ def _apply_standard_layout(figure: go.Figure, title: str, y_axis_title: str) -> 
 
     figure.update_layout(
         title=title,
-        template="plotly_white",
+        template="plotly_dark",
         height=340,
         margin=dict(l=18, r=18, t=64, b=18),
         hovermode="x unified",
@@ -64,8 +66,8 @@ def _apply_standard_layout(figure: go.Figure, title: str, y_axis_title: str) -> 
         title_x=0.02,
         title_font=dict(size=18, color=APP_CHART_COLORS["ink"]),
         hoverlabel=dict(
-            bgcolor="rgba(255, 255, 255, 0.96)",
-            bordercolor="rgba(24, 36, 47, 0.10)",
+            bgcolor="rgba(13, 19, 28, 0.96)",
+            bordercolor="rgba(142, 197, 255, 0.18)",
             font=dict(color=APP_CHART_COLORS["ink"], size=12),
         ),
         font=dict(size=12, color=APP_CHART_COLORS["muted"]),
@@ -257,7 +259,7 @@ def create_sentiment_trend_chart(sentiment_trend: pd.DataFrame) -> go.Figure:
         go.Bar(
             x=sentiment_trend["published_date"],
             y=sentiment_trend["article_count"],
-            marker_color="rgba(0, 0, 0, 0.42)",
+            marker_color=APP_CHART_COLORS["bar_soft"],
             name="Article Count",
             yaxis="y2",
         )
@@ -268,12 +270,12 @@ def create_sentiment_trend_chart(sentiment_trend: pd.DataFrame) -> go.Figure:
             y=sentiment_trend["average_sentiment"],
             mode="lines+markers",
             line=dict(color=APP_CHART_COLORS["primary"], width=2.4),
-            marker=dict(size=6, color="#f6f1ea", line=dict(color=APP_CHART_COLORS["primary"], width=1.5)),
+            marker=dict(size=6, color=APP_CHART_COLORS["marker_fill"], line=dict(color=APP_CHART_COLORS["primary"], width=1.5)),
             name="Average Sentiment",
         )
     )
     figure.update_layout(
-        template="plotly_white",
+        template="plotly_dark",
         height=340,
         margin=dict(l=18, r=18, t=64, b=18),
         hovermode="x unified",
@@ -313,7 +315,7 @@ def create_prediction_history_chart(prediction_history: pd.DataFrame) -> go.Figu
             y=prediction_history["predicted_return_20d"],
             mode="lines+markers",
             line=dict(color=APP_CHART_COLORS["primary"], width=2.4),
-            marker=dict(size=5, color="#f6f1ea", line=dict(color=APP_CHART_COLORS["primary"], width=1.4)),
+            marker=dict(size=5, color=APP_CHART_COLORS["marker_fill"], line=dict(color=APP_CHART_COLORS["primary"], width=1.4)),
             name="Expected Return",
         )
     )
@@ -323,13 +325,13 @@ def create_prediction_history_chart(prediction_history: pd.DataFrame) -> go.Figu
             y=prediction_history["downside_probability_20d"],
             mode="lines+markers",
             line=dict(color=APP_CHART_COLORS["negative"], width=2.0),
-            marker=dict(size=5, color="#f6f1ea", line=dict(color=APP_CHART_COLORS["negative"], width=1.4)),
+            marker=dict(size=5, color=APP_CHART_COLORS["marker_fill"], line=dict(color=APP_CHART_COLORS["negative"], width=1.4)),
             name="Probability Negative",
             yaxis="y2",
         )
     )
     figure.update_layout(
-        template="plotly_white",
+        template="plotly_dark",
         height=340,
         margin=dict(l=18, r=18, t=64, b=18),
         hovermode="x unified",
@@ -373,7 +375,7 @@ def create_feature_driver_chart(feature_drivers: list[dict[str, object]]) -> go.
         )
     )
     figure.update_layout(
-        template="plotly_white",
+        template="plotly_dark",
         height=340,
         margin=dict(l=18, r=18, t=64, b=18),
         xaxis_title="Standardized Deviation vs Recent History",
@@ -437,7 +439,7 @@ def create_simulation_comparison_chart(
         )
     )
     figure.update_layout(
-        template="plotly_white",
+        template="plotly_dark",
         height=360,
         margin=dict(l=18, r=18, t=68, b=64),
         hovermode="x unified",
@@ -762,7 +764,7 @@ def create_ml_score_history_chart(prediction_history: pd.DataFrame) -> go.Figure
             y=prediction_history["composite_ml_score"],
             mode="lines+markers",
             line=dict(color=APP_CHART_COLORS["primary"], width=2.5),
-            marker=dict(size=5, color="#f6f1ea", line=dict(color=APP_CHART_COLORS["primary"], width=1.4)),
+            marker=dict(size=5, color=APP_CHART_COLORS["marker_fill"], line=dict(color=APP_CHART_COLORS["primary"], width=1.4)),
             name="Composite Score",
         )
     )
@@ -772,13 +774,13 @@ def create_ml_score_history_chart(prediction_history: pd.DataFrame) -> go.Figure
             y=prediction_history["probability_positive_20d"],
             mode="lines+markers",
             line=dict(color=APP_CHART_COLORS["positive"], width=2.0),
-            marker=dict(size=5, color="#f6f1ea", line=dict(color=APP_CHART_COLORS["positive"], width=1.4)),
+            marker=dict(size=5, color=APP_CHART_COLORS["marker_fill"], line=dict(color=APP_CHART_COLORS["positive"], width=1.4)),
             name="Probability Positive",
             yaxis="y2",
         )
     )
     figure.update_layout(
-        template="plotly_white",
+        template="plotly_dark",
         height=340,
         margin=dict(l=18, r=18, t=64, b=18),
         hovermode="x unified",
@@ -820,7 +822,7 @@ def create_pillar_contribution_chart(contribution_rows: list[dict[str, object]])
         )
     )
     figure.update_layout(
-        template="plotly_white",
+        template="plotly_dark",
         height=340,
         margin=dict(l=18, r=18, t=64, b=18),
         xaxis_title="Signal Pillar",
@@ -853,7 +855,7 @@ def create_feature_importance_chart(feature_rows: list[dict[str, object]]) -> go
         )
     )
     figure.update_layout(
-        template="plotly_white",
+        template="plotly_dark",
         height=340,
         margin=dict(l=18, r=18, t=64, b=18),
         xaxis_title="Importance",
