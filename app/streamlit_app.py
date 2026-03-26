@@ -1198,7 +1198,7 @@ def main() -> None:
         _render_section_intro(
             "Workflow",
             "Complete the review in four steps",
-            "The workflow below mirrors the intended sequence so the next action is always clear.",
+            "Follow the sequence below to load coverage, run analysis, and generate the report.",
         )
         _render_workflow_steps()
 
@@ -1217,7 +1217,7 @@ def main() -> None:
                     default_index = dropdown_options.index(label_by_ticker[st.session_state.active_ticker])
 
                 selected_label = st.selectbox(
-                    "Stored Asset Coverage",
+                    "Stored Asset (SQL)",
                     options=dropdown_options,
                     index=default_index,
                     help="Load an asset that already exists in stored coverage.",
