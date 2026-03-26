@@ -1,5 +1,6 @@
 import importlib
 import os
+import time
 import unittest
 import uuid
 from datetime import date
@@ -73,6 +74,12 @@ class FakeProvider:
         )
 
 
+class SlowProvider(FakeProvider):
+    def fetch_market_data(self, ticker: str, lookback_days: int = 365):
+        time.sleep(0.2)
+        return super().fetch_market_data(ticker=ticker, lookback_days=lookback_days)
+
+
 class MarketDataServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         TEST_ROOT.mkdir(parents=True, exist_ok=True)
@@ -112,6 +119,20 @@ class MarketDataServiceTests(unittest.TestCase):
         self.assertIsNotNone(metadata)
         self.assertEqual(metadata["ticker"], "VOO")
         self.assertEqual(len(price_rows), 1)
+
+    def test_ingestion_service_times_out_provider_calls(self) -> None:
+        slow_provider = SlowProvider()
+        service = self.service_module.MarketDataIngestionService(
+            provider=slow_provider,
+            repository=self.repository_module.MarketDataRepository(),
+            provider_timeout_seconds=0,
+        )
+
+        result = service.ingest_ticker("VOO", lookback_days=30)
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.status, "provider_unavailable")
+        self.assertIn("timed out", result.message.lower())
 
 
 if __name__ == "__main__":

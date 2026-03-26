@@ -4,7 +4,10 @@ Central market-data ingestion service.
 
 from __future__ import annotations
 
+import os
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 
 from src.data.providers.market_data_provider import EmptyProviderResponseError
@@ -17,6 +20,7 @@ from src.database.connection import initialize_database
 
 
 LOGGER = logging.getLogger(__name__)
+DEFAULT_PROVIDER_TIMEOUT_SECONDS = 25
 
 
 @dataclass(frozen=True)
@@ -37,9 +41,35 @@ class MarketDataIngestionService:
         self,
         provider: YFinanceMarketDataProvider | None = None,
         repository: MarketDataRepository | None = None,
+        provider_timeout_seconds: int | None = None,
     ) -> None:
         self.provider = provider or YFinanceMarketDataProvider()
         self.repository = repository or MarketDataRepository()
+        timeout_from_env = os.getenv("MARKET_DATA_PROVIDER_TIMEOUT_SECONDS", "").strip()
+        if provider_timeout_seconds is not None:
+            self.provider_timeout_seconds = int(provider_timeout_seconds)
+        elif timeout_from_env:
+            self.provider_timeout_seconds = int(timeout_from_env)
+        else:
+            self.provider_timeout_seconds = DEFAULT_PROVIDER_TIMEOUT_SECONDS
+
+    def _fetch_market_data_with_timeout(self, ticker: str, lookback_days: int):
+        """Run the provider call with a bounded timeout so UI requests cannot hang indefinitely."""
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                self.provider.fetch_market_data,
+                ticker=ticker,
+                lookback_days=lookback_days,
+            )
+            try:
+                return future.result(timeout=self.provider_timeout_seconds)
+            except FutureTimeoutError as exc:
+                future.cancel()
+                raise ProviderUnavailableError(
+                    "Market-data provider request timed out before completing. "
+                    f"Ticker: {ticker}. Timeout: {self.provider_timeout_seconds} seconds."
+                ) from exc
 
     def ingest_ticker(
         self,
@@ -74,7 +104,7 @@ class MarketDataIngestionService:
         LOGGER.info("Cache miss for %s", normalized_ticker)
 
         try:
-            payload = self.provider.fetch_market_data(
+            payload = self._fetch_market_data_with_timeout(
                 ticker=normalized_ticker,
                 lookback_days=lookback_days,
             )

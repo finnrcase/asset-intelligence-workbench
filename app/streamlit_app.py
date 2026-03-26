@@ -880,6 +880,19 @@ def _load_pdf_report_module():
     return importlib.reload(report_module), None
 
 
+def _build_analysis_signature(ticker: str, forecast_horizon: int, simulation_count: int) -> tuple[str, int, int]:
+    """Build a stable cache key for the current analysis request."""
+
+    return (ticker, forecast_horizon, simulation_count)
+
+
+def _clear_analysis_state() -> None:
+    """Reset cached analysis artifacts so outputs only show fresh runs."""
+
+    st.session_state.analysis_outputs = None
+    st.session_state.analysis_error = None
+
+
 def main() -> None:
     """Run the first-pass Streamlit dashboard."""
 
@@ -947,17 +960,20 @@ def main() -> None:
         st.session_state.open_report_status = None
     if "sentiment_status_by_ticker" not in st.session_state:
         st.session_state.sentiment_status_by_ticker = {}
+    if "analysis_outputs" not in st.session_state:
+        st.session_state.analysis_outputs = None
+    if "analysis_error" not in st.session_state:
+        st.session_state.analysis_error = None
 
-    tab_input, tab_outputs, tab_summary = st.tabs(
-        ["Input", "Outputs", "Visual Summary"]
-    )
+    tab_input, tab_outputs = st.tabs(["Inputs", "Outputs"])
 
     selected_ticker = ""
     manual_ticker = ""
     load_clicked = False
+    run_analysis_clicked = False
     generate_report_clicked = False
-    forecast_horizon = DEFAULT_FORECAST_HORIZON
-    simulation_count = DEFAULT_SIMULATION_COUNT
+    forecast_horizon = st.session_state.get("forecast_horizon_input", DEFAULT_FORECAST_HORIZON)
+    simulation_count = st.session_state.get("simulation_count_input", DEFAULT_SIMULATION_COUNT)
 
     with tab_input:
         _render_section_intro(
@@ -1003,7 +1019,7 @@ def main() -> None:
                 "Use the stored asset selector for local coverage, or enter a new ticker to fetch and ingest it on demand."
             )
 
-            action_columns = st.columns(2)
+            action_columns = st.columns(3)
             with action_columns[0]:
                 load_clicked = st.button(
                     "Load Asset",
@@ -1011,6 +1027,11 @@ def main() -> None:
                     type="primary",
                 )
             with action_columns[1]:
+                run_analysis_clicked = st.button(
+                    "Run Analysis",
+                    use_container_width=True,
+                )
+            with action_columns[2]:
                 generate_report_clicked = st.button(
                     "Generate PDF Report",
                     use_container_width=True,
@@ -1026,17 +1047,19 @@ def main() -> None:
                 "Forecast Horizon (Trading Days)",
                 min_value=21,
                 max_value=252,
-                value=DEFAULT_FORECAST_HORIZON,
+                value=forecast_horizon,
                 step=21,
                 help="Forward simulation horizon expressed in trading days.",
+                key="forecast_horizon_input",
             )
             simulation_count = st.slider(
                 "Simulation Count",
                 min_value=100,
                 max_value=2000,
-                value=DEFAULT_SIMULATION_COUNT,
+                value=simulation_count,
                 step=100,
                 help="Number of Monte Carlo paths to generate.",
+                key="simulation_count_input",
             )
             st.markdown(
                 '<p class="control-note">These controls feed the existing simulation and report-generation workflows without altering their underlying logic.</p>',
@@ -1082,16 +1105,13 @@ def main() -> None:
         st.session_state.asset_status = resolution
         if resolution.get("success"):
             st.session_state.active_ticker = resolution["ticker"]
+            _clear_analysis_state()
             st.rerun()
 
     if not st.session_state.active_ticker:
         with tab_outputs:
             _render_empty_state(
                 "Select an existing asset or enter a ticker to fetch one into the local database."
-            )
-        with tab_summary:
-            _render_empty_state(
-                "Load an asset to populate the executive summary, report actions, and analytical output workspace."
             )
         return
 
@@ -1123,19 +1143,6 @@ def main() -> None:
                 f"{st.session_state.active_ticker} does not have enough clean price observations for analytics yet."
             )
         return
-
-    sentiment_status = st.session_state.sentiment_status_by_ticker.get(
-        st.session_state.active_ticker
-    )
-    if sentiment_status is None:
-        with st.spinner("Fetching recent sentiment..."):
-            sentiment_status = app_data.ensure_sentiment_for_ticker(
-                st.session_state.active_ticker,
-                page_size=DEFAULT_SENTIMENT_PAGE_SIZE,
-            )
-        st.session_state.sentiment_status_by_ticker[st.session_state.active_ticker] = sentiment_status
-        if sentiment_status.get("success") and sentiment_status.get("fetched"):
-            st.rerun()
 
     if generate_report_clicked:
         report_status_indicator = st.status(
@@ -1184,42 +1191,103 @@ def main() -> None:
                 expanded=True,
             )
 
-    with st.spinner(f"Building analytics output for {st.session_state.active_ticker}..."):
-        return_frame = build_return_frame(price_frame, price_column="analysis_price")
-        ml_summary = app_data.build_ml_forecast_summary(st.session_state.active_ticker)
-        rolling_volatility = compute_rolling_volatility(
-            return_frame["daily_return"],
-            window=ROLLING_VOLATILITY_WINDOW,
-        )
-        risk_summary = build_risk_summary(
-            price_frame,
-            price_column="analysis_price",
-            confidence_level=VAR_CONFIDENCE_LEVEL,
-            volatility_window=ROLLING_VOLATILITY_WINDOW,
-        )
-
-    data_origin = (st.session_state.asset_status or {}).get("status", "database")
-    origin_label = "Newly Ingested" if data_origin == "ingested" else "Local Database"
-    sentiment_rows = app_data.load_recent_news_articles(
+    analysis_signature = _build_analysis_signature(
         st.session_state.active_ticker,
-        limit=25,
+        forecast_horizon,
+        simulation_count,
     )
-    sentiment_summary = app_data.get_sentiment_summary(sentiment_rows)
-    recent_prices = app_data.get_recent_price_table(price_frame, rows=10)
-    total_return = compute_total_return(price_frame, price_column="analysis_price")
-    annualized_return = compute_annualized_return(price_frame, price_column="analysis_price")
-    simulation_result = None
-    simulation_error = None
-    try:
-        simulation_result = run_comparative_monte_carlo_simulation(
-            price_frame,
-            price_column="analysis_price",
-            ml_forecast_snapshot=ml_summary["snapshot"],
-            horizon_days=forecast_horizon,
-            simulation_count=simulation_count,
+
+    if run_analysis_clicked:
+        analysis_status_indicator = st.status(
+            f"Running analysis for {st.session_state.active_ticker}...",
+            expanded=True,
         )
-    except ValueError as exc:
-        simulation_error = str(exc)
+        try:
+            sentiment_status = st.session_state.sentiment_status_by_ticker.get(
+                st.session_state.active_ticker
+            )
+            if sentiment_status is None:
+                analysis_status_indicator.write("Fetching recent sentiment context.")
+                sentiment_status = app_data.ensure_sentiment_for_ticker(
+                    st.session_state.active_ticker,
+                    page_size=DEFAULT_SENTIMENT_PAGE_SIZE,
+                )
+                st.session_state.sentiment_status_by_ticker[st.session_state.active_ticker] = sentiment_status
+
+            analysis_status_indicator.write("Building market analytics and risk outputs.")
+            return_frame = build_return_frame(price_frame, price_column="analysis_price")
+            ml_summary = app_data.build_ml_forecast_summary(st.session_state.active_ticker)
+            rolling_volatility = compute_rolling_volatility(
+                return_frame["daily_return"],
+                window=ROLLING_VOLATILITY_WINDOW,
+            )
+            risk_summary = build_risk_summary(
+                price_frame,
+                price_column="analysis_price",
+                confidence_level=VAR_CONFIDENCE_LEVEL,
+                volatility_window=ROLLING_VOLATILITY_WINDOW,
+            )
+
+            analysis_status_indicator.write("Preparing output tables and simulation results.")
+            data_origin = (st.session_state.asset_status or {}).get("status", "database")
+            origin_label = "Newly Ingested" if data_origin == "ingested" else "Local Database"
+            sentiment_rows = app_data.load_recent_news_articles(
+                st.session_state.active_ticker,
+                limit=25,
+            )
+            sentiment_summary = app_data.get_sentiment_summary(sentiment_rows)
+            recent_prices = app_data.get_recent_price_table(price_frame, rows=10)
+
+            simulation_result = None
+            simulation_error = None
+            try:
+                simulation_result = run_comparative_monte_carlo_simulation(
+                    price_frame,
+                    price_column="analysis_price",
+                    ml_forecast_snapshot=ml_summary["snapshot"],
+                    horizon_days=forecast_horizon,
+                    simulation_count=simulation_count,
+                )
+            except ValueError as exc:
+                simulation_error = str(exc)
+
+            st.session_state.analysis_outputs = {
+                "signature": analysis_signature,
+                "metadata": metadata,
+                "price_frame": price_frame,
+                "return_frame": return_frame,
+                "ml_summary": ml_summary,
+                "rolling_volatility": rolling_volatility,
+                "risk_summary": risk_summary,
+                "origin_label": origin_label,
+                "sentiment_status": sentiment_status,
+                "sentiment_rows": sentiment_rows,
+                "sentiment_summary": sentiment_summary,
+                "recent_prices": recent_prices,
+                "simulation_result": simulation_result,
+                "simulation_error": simulation_error,
+            }
+            st.session_state.analysis_error = None
+            analysis_status_indicator.update(
+                label=f"Analysis complete for {st.session_state.active_ticker}.",
+                state="complete",
+                expanded=False,
+            )
+        except Exception as exc:
+            _clear_analysis_state()
+            st.session_state.analysis_error = str(exc)
+            analysis_status_indicator.update(
+                label=f"Analysis failed for {st.session_state.active_ticker}.",
+                state="error",
+                expanded=True,
+            )
+            analysis_status_indicator.write(str(exc))
+
+    analysis_outputs = st.session_state.analysis_outputs
+    has_current_outputs = (
+        analysis_outputs is not None
+        and analysis_outputs.get("signature") == analysis_signature
+    )
 
     with tab_outputs:
         _render_section_intro(
@@ -1255,7 +1323,11 @@ def main() -> None:
                                 use_container_width=True,
                             )
                         with action_columns[1]:
-                            if st.button("Open Report Locally", use_container_width=True):
+                            if st.button(
+                                "Open Report Locally",
+                                use_container_width=True,
+                                key="outputs_open_report_button",
+                            ):
                                 pdf_report_module, pdf_report_error = _load_pdf_report_module()
                                 if pdf_report_module is None:
                                     st.session_state.open_report_status = {
@@ -1286,6 +1358,38 @@ def main() -> None:
                 st.info(st.session_state.open_report_status["message"])
             else:
                 st.warning(st.session_state.open_report_status["message"])
+
+        if st.session_state.analysis_error and not has_current_outputs:
+            st.error(
+                "Analysis generation did not complete successfully.\n\n"
+                f"{st.session_state.analysis_error}"
+            )
+            return
+
+        if not has_current_outputs:
+            if analysis_outputs is None:
+                _render_empty_state(
+                    "Run Analysis from the Inputs tab to generate charts, metrics, tables, and simulation outputs for the active asset."
+                )
+            else:
+                st.info(
+                    "The active inputs changed since the last completed analysis. Run Analysis again from the Inputs tab to refresh the output workspace."
+                )
+            return
+
+        metadata = analysis_outputs["metadata"]
+        price_frame = analysis_outputs["price_frame"]
+        return_frame = analysis_outputs["return_frame"]
+        ml_summary = analysis_outputs["ml_summary"]
+        rolling_volatility = analysis_outputs["rolling_volatility"]
+        risk_summary = analysis_outputs["risk_summary"]
+        origin_label = analysis_outputs["origin_label"]
+        sentiment_status = analysis_outputs["sentiment_status"]
+        sentiment_rows = analysis_outputs["sentiment_rows"]
+        sentiment_summary = analysis_outputs["sentiment_summary"]
+        recent_prices = analysis_outputs["recent_prices"]
+        simulation_result = analysis_outputs["simulation_result"]
+        simulation_error = analysis_outputs["simulation_error"]
 
         _render_asset_overview(
             metadata=metadata,
@@ -1598,7 +1702,7 @@ def main() -> None:
                     ),
                 )
 
-    with tab_summary:
+    if False:
         _render_section_intro(
             "Executive View",
             "Visual summary of the active asset",
