@@ -11,6 +11,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
+import logging
 from pathlib import Path
 from typing import Iterator
 
@@ -38,6 +39,7 @@ from src.utils.config import AppConfig
 from src.utils.config import get_config
 
 
+LOGGER = logging.getLogger(__name__)
 DATABASE_CONFIG = get_config()
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SCHEMA_PATH = PROJECT_ROOT / "sql" / "schema.sql"
@@ -229,6 +231,11 @@ def create_database_engine(config: AppConfig | None = None) -> Engine:
     if resolved_config.is_sqlite:
         resolved_config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
+    LOGGER.info(
+        "Creating SQLAlchemy engine. database_url=%s sqlite_path=%s",
+        resolved_config.database_url,
+        resolved_config.sqlite_path,
+    )
     connect_args = {"check_same_thread": False} if resolved_config.is_sqlite else {}
     engine = create_engine(
         resolved_config.database_url,
@@ -237,6 +244,7 @@ def create_database_engine(config: AppConfig | None = None) -> Engine:
         connect_args=connect_args,
     )
     _enable_sqlite_foreign_keys(engine, resolved_config)
+    LOGGER.info("SQLAlchemy engine ready. bound_url=%s", engine.url)
     return engine
 
 
@@ -293,12 +301,22 @@ def reset_database_engine() -> Engine:
 
     refreshed_config = get_config()
     if _database_config_signature(refreshed_config) == _database_config_signature(DATABASE_CONFIG):
+        LOGGER.info(
+            "Reusing existing SQLAlchemy engine. bound_url=%s sqlite_path=%s",
+            ENGINE.url,
+            DATABASE_CONFIG.sqlite_path,
+        )
         return ENGINE
 
     ENGINE.dispose()
     DATABASE_CONFIG = refreshed_config
     ENGINE = create_database_engine(DATABASE_CONFIG)
     SessionLocal = create_session_factory(ENGINE)
+    LOGGER.info(
+        "Rebuilt SQLAlchemy engine with resolved database_url=%s sqlite_path=%s",
+        DATABASE_CONFIG.database_url,
+        DATABASE_CONFIG.sqlite_path,
+    )
     return ENGINE
 
 
@@ -331,6 +349,11 @@ def initialize_database(schema_path: Path | None = None) -> None:
     """
 
     runtime_config = get_config()
+    LOGGER.info(
+        "Initializing database schema. database_url=%s sqlite_path=%s",
+        runtime_config.database_url,
+        runtime_config.sqlite_path,
+    )
 
     if runtime_config.is_sqlite:
         runtime_config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)

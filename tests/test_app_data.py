@@ -11,8 +11,15 @@ class AppDataTests(unittest.TestCase):
         self.assertEqual(app_data.normalize_app_ticker(" msft "), "MSFT")
         self.assertEqual(app_data.normalize_app_ticker("btc-usd"), "BTC-USD")
 
+    @patch("src.utils.app_data._has_stored_price_history", return_value=False)
+    @patch("src.utils.app_data.ticker_exists", return_value=False)
     @patch("src.utils.app_data.MARKET_DATA_SERVICE")
-    def test_ingest_single_ticker_returns_service_result(self, mock_service) -> None:
+    def test_ingest_single_ticker_returns_service_result(
+        self,
+        mock_service,
+        _mock_exists,
+        _mock_prices,
+    ) -> None:
         mock_service.ingest_ticker.return_value = IngestionResult(
             success=False,
             ticker="VOO",

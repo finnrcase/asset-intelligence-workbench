@@ -55,6 +55,48 @@ def _resolve_project_path(path_value: str | Path) -> Path:
     return path.resolve(strict=False)
 
 
+def _is_path_within_root(path: Path, root: Path) -> bool:
+    """Return True when the given path is inside the provided root directory."""
+
+    try:
+        path.resolve(strict=False).relative_to(root.resolve(strict=False))
+        return True
+    except ValueError:
+        return False
+
+
+def _is_hosted_source_mount(project_root: Path | None = None) -> bool:
+    """Return True when the app appears to be running from a hosted read-only source mount."""
+
+    resolved_root = (project_root or PROJECT_ROOT).resolve(strict=False)
+    root_text = resolved_root.as_posix().lower()
+    root_parts = [part.lower() for part in resolved_root.parts]
+    return root_text.startswith("/mount/src/") or any(
+        root_parts[index:index + 2] == ["mount", "src"]
+        for index in range(len(root_parts) - 1)
+    )
+
+
+def _should_prefer_runtime_sqlite_path(
+    sqlite_path: Path,
+    project_root: Path | None = None,
+) -> bool:
+    """
+    Return True when SQLite should avoid the configured repo-mounted path entirely.
+
+    Hosted environments such as Streamlit Cloud typically mount the repository
+    source tree read-only under `/mount/src/...`, so SQLite should use a runtime
+    temp directory before any write probe is attempted there.
+    """
+
+    resolved_root = (project_root or PROJECT_ROOT).resolve(strict=False)
+    resolved_path = sqlite_path.resolve(strict=False)
+    return _is_hosted_source_mount(resolved_root) and _is_path_within_root(
+        resolved_path,
+        resolved_root,
+    )
+
+
 def _sqlite_path_has_assets(sqlite_path: Path) -> bool:
     """Return True when the SQLite file exists and contains at least one stored asset."""
 
@@ -204,40 +246,68 @@ def prepare_sqlite_runtime(sqlite_path: Path, database_url: str) -> Path:
     _validate_sqlite_database_url(database_url)
 
     resolved_path = sqlite_path.expanduser().resolve(strict=False)
+    should_prefer_runtime = _should_prefer_runtime_sqlite_path(resolved_path)
 
-    try:
-        _ensure_directory_writable(resolved_path.parent)
-        _ensure_sqlite_file_writable(resolved_path)
-        return resolved_path
-    except DatabaseConfigurationError as exc:
-        fallback_paths = [
+    if should_prefer_runtime:
+        LOGGER.warning(
+            "Configured SQLite path %s is inside a hosted source mount. "
+            "Skipping repo-mounted storage and using a writable runtime location instead.",
+            resolved_path,
+        )
+
+    candidate_paths: list[Path] = []
+    if not should_prefer_runtime:
+        candidate_paths.append(resolved_path)
+    candidate_paths.extend(
+        [
             _build_runtime_sqlite_path(resolved_path),
             _build_ephemeral_runtime_sqlite_path(resolved_path),
         ]
-        last_error: DatabaseConfigurationError = exc
+    )
 
-        for runtime_path in fallback_paths:
-            if runtime_path == resolved_path:
+    unique_candidate_paths: list[Path] = []
+    for candidate_path in candidate_paths:
+        if candidate_path not in unique_candidate_paths:
+            unique_candidate_paths.append(candidate_path)
+
+    last_error: DatabaseConfigurationError | None = None
+    for candidate_path in unique_candidate_paths:
+        if candidate_path == resolved_path:
+            try:
+                _ensure_directory_writable(candidate_path.parent)
+                _ensure_sqlite_file_writable(candidate_path)
+                return candidate_path
+            except DatabaseConfigurationError as exc:
+                last_error = exc
                 continue
 
+        if last_error is not None:
             LOGGER.warning(
                 "SQLite path %s is not writable; falling back to runtime path %s. Original error: %s",
                 resolved_path,
-                runtime_path,
+                candidate_path,
                 last_error,
             )
+        else:
+            LOGGER.info(
+                "Trying writable runtime SQLite path %s for configured source path %s.",
+                candidate_path,
+                resolved_path,
+            )
 
-            try:
-                return _prepare_sqlite_candidate(runtime_path, resolved_path)
-            except DatabaseConfigurationError as runtime_exc:
-                LOGGER.warning(
-                    "SQLite runtime fallback path %s was also not writable. Runtime error: %s",
-                    runtime_path,
-                    runtime_exc,
-                )
-                last_error = runtime_exc
+        try:
+            return _prepare_sqlite_candidate(candidate_path, resolved_path)
+        except DatabaseConfigurationError as runtime_exc:
+            LOGGER.warning(
+                "SQLite runtime fallback path %s was also not writable. Runtime error: %s",
+                candidate_path,
+                runtime_exc,
+            )
+            last_error = runtime_exc
 
-        raise last_error
+    raise last_error or DatabaseConfigurationError(
+        f"SQLite database file is not writable: {resolved_path}"
+    )
 
 
 def _can_create_temp_file(directory: Path) -> bool:
@@ -412,6 +482,7 @@ def get_config() -> AppConfig:
 
     configured_database_url = os.getenv("DATABASE_URL")
     sqlite_path = get_resolved_sqlite_path(configured_database_url)
+    LOGGER.info("Configured SQLite database path: %s", sqlite_path)
     database_url = (
         configured_database_url
         if configured_database_url and not configured_database_url.startswith("sqlite")
@@ -430,6 +501,8 @@ def get_config() -> AppConfig:
                 "SQLite runtime fallback used: %s",
                 sqlite_path != original_sqlite_path,
             )
+            LOGGER.info("Final SQLite database path: %s", sqlite_path)
+            LOGGER.info("Final SQLAlchemy database URL: %s", database_url)
             log_sqlite_startup_diagnostics(database_url, sqlite_path=sqlite_path)
         except DatabaseConfigurationError as exc:
             fallback_display_path = get_default_writable_db_path(original_sqlite_path.name)
@@ -441,6 +514,8 @@ def get_config() -> AppConfig:
             sqlite_path = fallback_display_path
             database_url = SQLITE_IN_MEMORY_URL
             LOGGER.info("SQLite runtime fallback used: true")
+            LOGGER.info("Final SQLite database path: %s", sqlite_path)
+            LOGGER.info("Final SQLAlchemy database URL: %s", database_url)
             LOGGER.info("SQLite database URL: %s", database_url)
             LOGGER.info("SQLite database parent directory: %s", sqlite_path.parent)
             LOGGER.info(

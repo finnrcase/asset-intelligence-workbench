@@ -174,6 +174,42 @@ class ConfigTests(unittest.TestCase):
         finally:
             self._cleanup_tree(temp_root)
 
+    def test_prepare_sqlite_runtime_prefers_runtime_path_for_hosted_repo_mounts(self) -> None:
+        temp_root = TEST_ROOT / f"hosted_runtime_preferred_{uuid4().hex}"
+        project_root = temp_root / "mount" / "src" / "asset-intelligence-workbench"
+        source_path = project_root / "data" / "processed" / "asset_intelligence.db"
+        runtime_root = temp_root / "tmp" / "asset-intelligence-workbench"
+
+        try:
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            connection = sqlite3.connect(source_path)
+            try:
+                connection.execute("CREATE TABLE assets (id INTEGER PRIMARY KEY, ticker TEXT NOT NULL)")
+                connection.execute("INSERT INTO assets(ticker) VALUES ('VOO')")
+                connection.commit()
+            finally:
+                connection.close()
+
+            with patch("src.utils.config.PROJECT_ROOT", project_root):
+                with patch.dict(os.environ, {"SQLITE_RUNTIME_DIR": str(runtime_root)}, clear=False):
+                    runtime_path = config.prepare_sqlite_runtime(
+                        sqlite_path=source_path,
+                        database_url=f"sqlite:///{source_path.resolve(strict=False)}",
+                    )
+
+            self.assertEqual(runtime_path, (runtime_root / source_path.name).resolve(strict=False))
+            self.assertTrue(runtime_path.exists())
+
+            copied_connection = sqlite3.connect(runtime_path)
+            try:
+                row = copied_connection.execute("SELECT ticker FROM assets").fetchone()
+            finally:
+                copied_connection.close()
+
+            self.assertEqual(row[0], "VOO")
+        finally:
+            self._cleanup_tree(temp_root)
+
     def test_prepare_sqlite_runtime_falls_back_to_runtime_copy_when_original_is_not_writable(self) -> None:
         temp_root = TEST_ROOT / f"runtime_fallback_{uuid4().hex}"
         source_path = temp_root / "readonly" / "asset_intelligence.db"
@@ -324,6 +360,33 @@ class ConfigTests(unittest.TestCase):
                 clear=False,
             ):
                 with patch("src.utils.config._ensure_sqlite_file_writable", side_effect=fake_ensure_writable):
+                    app_config = config.get_config()
+
+            expected_runtime_path = (runtime_root / source_path.name).resolve(strict=False)
+            self.assertEqual(app_config.sqlite_path, expected_runtime_path)
+            self.assertEqual(app_config.database_url, f"sqlite:///{expected_runtime_path}")
+        finally:
+            self._cleanup_tree(temp_root)
+
+    def test_get_config_uses_runtime_sqlite_path_for_hosted_repo_mount(self) -> None:
+        temp_root = TEST_ROOT / f"config_hosted_runtime_{uuid4().hex}"
+        project_root = temp_root / "mount" / "src" / "asset-intelligence-workbench"
+        source_path = project_root / "data" / "processed" / "asset_intelligence.db"
+        runtime_root = temp_root / "tmp" / "asset-intelligence-workbench"
+
+        try:
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text("", encoding="utf-8")
+
+            with patch("src.utils.config.PROJECT_ROOT", project_root):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "SQLITE_DB_PATH": str(source_path),
+                        "SQLITE_RUNTIME_DIR": str(runtime_root),
+                    },
+                    clear=False,
+                ):
                     app_config = config.get_config()
 
             expected_runtime_path = (runtime_root / source_path.name).resolve(strict=False)
