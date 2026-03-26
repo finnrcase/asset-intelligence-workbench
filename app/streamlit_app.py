@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.database.connection import ensure_database_engine
 from src.database.connection import reset_database_engine
 from src.analytics.returns import build_return_frame
 from src.analytics.returns import compute_annualized_return
@@ -940,7 +941,13 @@ def _clear_analysis_state() -> None:
 def main() -> None:
     """Run the first-pass Streamlit dashboard."""
 
-    reset_database_engine()
+    if "database_engine_ready" not in st.session_state:
+        st.session_state.database_engine_ready = False
+    if not st.session_state.database_engine_ready:
+        reset_database_engine()
+        st.session_state.database_engine_ready = True
+    else:
+        ensure_database_engine()
     _log_startup_deploy_diagnostics()
 
     st.set_page_config(

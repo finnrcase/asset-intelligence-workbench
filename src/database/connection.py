@@ -262,15 +262,41 @@ def get_session_factory() -> sessionmaker[Session]:
     return SessionLocal
 
 
+def _database_config_signature(config: AppConfig) -> tuple[str, str, bool]:
+    """Return a stable signature for deciding whether the shared engine must rotate."""
+
+    return (
+        config.database_url,
+        str(config.sqlite_path),
+        config.sqlalchemy_echo,
+    )
+
+
+def ensure_database_engine() -> Engine:
+    """
+    Return the shared engine without forcing a config revalidation on every UI rerun.
+
+    Streamlit reruns the script for ordinary widget interactions, so the app should
+    reuse the already-initialized SQL engine unless a caller explicitly requests a
+    reconfiguration.
+    """
+
+    return ENGINE
+
+
 def reset_database_engine() -> Engine:
-    """Dispose and rebuild the shared engine/session factory for the current process."""
+    """Dispose and rebuild the shared engine/session factory when config changes."""
 
     global DATABASE_CONFIG
     global ENGINE
     global SessionLocal
 
-    DATABASE_CONFIG = get_config()
+    refreshed_config = get_config()
+    if _database_config_signature(refreshed_config) == _database_config_signature(DATABASE_CONFIG):
+        return ENGINE
+
     ENGINE.dispose()
+    DATABASE_CONFIG = refreshed_config
     ENGINE = create_database_engine(DATABASE_CONFIG)
     SessionLocal = create_session_factory(ENGINE)
     return ENGINE

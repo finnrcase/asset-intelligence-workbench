@@ -42,7 +42,8 @@ class ConfigTests(unittest.TestCase):
     def test_resolve_sqlite_path_uses_database_url_when_present(self) -> None:
         database_url = "sqlite:///tmp/custom_app.db"
 
-        with patch.dict(os.environ, {}, clear=False):
+        with patch.dict(os.environ, {"SQLITE_DB_PATH": ""}, clear=False):
+            os.environ.pop("SQLITE_DB_PATH", None)
             resolved = config._resolve_sqlite_path(database_url)
 
         self.assertEqual(
