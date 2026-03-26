@@ -215,6 +215,10 @@ div[data-baseweb="select"] *,
     border-color: rgba(144, 205, 255, 0.68);
 }
 
+.stButton > button[kind="primary"] *, .stDownloadButton > button[kind="primary"] * {
+    color: #06111d !important;
+}
+
 .stButton > button:hover, .stDownloadButton > button:hover {
     border-color: var(--line-strong);
     background: linear-gradient(180deg, rgba(27, 40, 53, 1), rgba(19, 30, 40, 1));
@@ -251,25 +255,27 @@ div[data-baseweb="select"] svg {
 }
 
 [data-testid="stTabs"] [role="tablist"] {
-    gap: 0.6rem;
-    margin-bottom: 1.15rem;
+    gap: 0.9rem;
+    margin-bottom: 1.3rem;
 }
 
 [data-testid="stTabs"] [role="tab"] {
-    height: 2.95rem;
-    background: rgba(18, 27, 36, 0.88);
-    border: 1px solid var(--line);
+    min-height: 3.45rem;
+    background: linear-gradient(180deg, rgba(24, 36, 49, 0.98), rgba(19, 29, 40, 0.98));
+    border: 1px solid rgba(142, 197, 255, 0.22);
     border-radius: 999px;
-    padding: 0 1.15rem;
-    color: var(--muted);
-    font-weight: 650;
+    padding: 0 1.45rem;
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 1rem;
+    box-shadow: 0 10px 24px rgba(3, 8, 14, 0.2);
 }
 
 [data-testid="stTabs"] [role="tab"][aria-selected="true"] {
-    background: linear-gradient(180deg, rgba(24, 36, 49, 0.98), rgba(19, 29, 40, 0.98));
-    color: var(--ink);
-    border-color: var(--line-strong);
-    box-shadow: inset 0 0 0 1px rgba(142, 197, 255, 0.08), var(--shadow-panel);
+    background: linear-gradient(180deg, rgba(145, 207, 255, 1), rgba(106, 179, 255, 1));
+    color: #06111d;
+    border-color: rgba(166, 219, 255, 0.9);
+    box-shadow: 0 14px 30px rgba(62, 129, 196, 0.32);
 }
 
 [data-testid="stSlider"] [role="slider"] {
