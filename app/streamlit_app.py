@@ -886,35 +886,42 @@ def _load_pdf_report_module():
 def _build_ml_summary_with_timeout(ticker: str) -> dict[str, object]:
     """Bound on-demand ML summary work so the Streamlit request cannot hang indefinitely."""
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(app_data.build_ml_forecast_summary, ticker)
-        try:
-            return future.result(timeout=ML_SUMMARY_TIMEOUT_SECONDS)
-        except FutureTimeoutError:
-            future.cancel()
-            return {
-                "available": False,
-                "snapshot": None,
-                "prediction_history": __import__("pandas").DataFrame(),
-                "feature_drivers": [],
-                "feature_importance": [],
-                "pillar_weights": [],
-                "pillar_contributions": [],
-                "build_status": {
-                    "success": False,
-                    "status": "ml_timeout",
-                    "message": (
-                        f"Machine-learning summary build for {ticker.upper()} exceeded "
-                        f"{ML_SUMMARY_TIMEOUT_SECONDS} seconds and was skipped for this run."
-                    ),
-                },
-                "target_definition": None,
-                "interpretation": (
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(app_data.build_ml_forecast_summary, ticker)
+    try:
+        return future.result(timeout=ML_SUMMARY_TIMEOUT_SECONDS)
+    except FutureTimeoutError:
+        future.cancel()
+        LOGGER.warning(
+            "Run analysis ML summary timed out for %s after %s seconds.",
+            ticker,
+            ML_SUMMARY_TIMEOUT_SECONDS,
+        )
+        return {
+            "available": False,
+            "snapshot": None,
+            "prediction_history": __import__("pandas").DataFrame(),
+            "feature_drivers": [],
+            "feature_importance": [],
+            "pillar_weights": [],
+            "pillar_contributions": [],
+            "build_status": {
+                "success": False,
+                "status": "ml_timeout",
+                "message": (
                     f"Machine-learning summary build for {ticker.upper()} exceeded "
-                    f"{ML_SUMMARY_TIMEOUT_SECONDS} seconds and was skipped for this run. "
-                    "The rest of the analysis remains available."
+                    f"{ML_SUMMARY_TIMEOUT_SECONDS} seconds and was skipped for this run."
                 ),
-            }
+            },
+            "target_definition": None,
+            "interpretation": (
+                f"Machine-learning summary build for {ticker.upper()} exceeded "
+                f"{ML_SUMMARY_TIMEOUT_SECONDS} seconds and was skipped for this run. "
+                "The rest of the analysis remains available."
+            ),
+        }
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _build_analysis_signature(ticker: str, forecast_horizon: int, simulation_count: int) -> tuple[str, int, int]:
@@ -1235,6 +1242,12 @@ def main() -> None:
     )
 
     if run_analysis_clicked:
+        LOGGER.info(
+            "Run analysis started: ticker=%s forecast_horizon=%s simulation_count=%s",
+            st.session_state.active_ticker,
+            forecast_horizon,
+            simulation_count,
+        )
         analysis_status_indicator = st.status(
             f"Running analysis for {st.session_state.active_ticker}...",
             expanded=True,
@@ -1244,13 +1257,16 @@ def main() -> None:
                 st.session_state.active_ticker
             )
             if sentiment_status is None:
+                LOGGER.info("Run analysis sentiment fetch started: ticker=%s", st.session_state.active_ticker)
                 analysis_status_indicator.write("Fetching recent sentiment context.")
                 sentiment_status = app_data.ensure_sentiment_for_ticker(
                     st.session_state.active_ticker,
                     page_size=DEFAULT_SENTIMENT_PAGE_SIZE,
                 )
                 st.session_state.sentiment_status_by_ticker[st.session_state.active_ticker] = sentiment_status
+                LOGGER.info("Run analysis sentiment fetch completed: ticker=%s", st.session_state.active_ticker)
 
+            LOGGER.info("Run analysis analytics build started: ticker=%s", st.session_state.active_ticker)
             analysis_status_indicator.write("Building market analytics and risk outputs.")
             return_frame = build_return_frame(price_frame, price_column="analysis_price")
             ml_summary = _build_ml_summary_with_timeout(st.session_state.active_ticker)
@@ -1264,7 +1280,9 @@ def main() -> None:
                 confidence_level=VAR_CONFIDENCE_LEVEL,
                 volatility_window=ROLLING_VOLATILITY_WINDOW,
             )
+            LOGGER.info("Run analysis analytics build completed: ticker=%s", st.session_state.active_ticker)
 
+            LOGGER.info("Run analysis simulation started: ticker=%s", st.session_state.active_ticker)
             analysis_status_indicator.write("Preparing output tables and simulation results.")
             data_origin = (st.session_state.asset_status or {}).get("status", "database")
             origin_label = "Newly Ingested" if data_origin == "ingested" else "Local Database"
@@ -1287,6 +1305,11 @@ def main() -> None:
                 )
             except ValueError as exc:
                 simulation_error = str(exc)
+            LOGGER.info(
+                "Run analysis simulation completed: ticker=%s simulation_error=%s",
+                st.session_state.active_ticker,
+                simulation_error is not None,
+            )
 
             st.session_state.analysis_outputs = {
                 "signature": analysis_signature,
@@ -1310,9 +1333,11 @@ def main() -> None:
                 state="complete",
                 expanded=False,
             )
+            LOGGER.info("Run analysis finished: ticker=%s", st.session_state.active_ticker)
         except Exception as exc:
             _clear_analysis_state()
             st.session_state.analysis_error = str(exc)
+            LOGGER.exception("Run analysis failed: ticker=%s", st.session_state.active_ticker)
             analysis_status_indicator.update(
                 label=f"Analysis failed for {st.session_state.active_ticker}.",
                 state="error",

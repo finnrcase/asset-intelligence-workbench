@@ -56,20 +56,22 @@ class MarketDataIngestionService:
     def _fetch_market_data_with_timeout(self, ticker: str, lookback_days: int):
         """Run the provider call with a bounded timeout so UI requests cannot hang indefinitely."""
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                self.provider.fetch_market_data,
-                ticker=ticker,
-                lookback_days=lookback_days,
-            )
-            try:
-                return future.result(timeout=self.provider_timeout_seconds)
-            except FutureTimeoutError as exc:
-                future.cancel()
-                raise ProviderUnavailableError(
-                    "Market-data provider request timed out before completing. "
-                    f"Ticker: {ticker}. Timeout: {self.provider_timeout_seconds} seconds."
-                ) from exc
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(
+            self.provider.fetch_market_data,
+            ticker=ticker,
+            lookback_days=lookback_days,
+        )
+        try:
+            return future.result(timeout=self.provider_timeout_seconds)
+        except FutureTimeoutError as exc:
+            future.cancel()
+            raise ProviderUnavailableError(
+                "Market-data provider request timed out before completing. "
+                f"Ticker: {ticker}. Timeout: {self.provider_timeout_seconds} seconds."
+            ) from exc
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def ingest_ticker(
         self,
