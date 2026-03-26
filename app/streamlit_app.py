@@ -278,6 +278,10 @@ div[data-baseweb="select"] svg {
     box-shadow: 0 14px 30px rgba(62, 129, 196, 0.32);
 }
 
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] * {
+    color: #06111d !important;
+}
+
 [data-testid="stSlider"] [role="slider"] {
     box-shadow: 0 0 0 5px rgba(142, 197, 255, 0.16);
 }
