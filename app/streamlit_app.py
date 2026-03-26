@@ -1008,6 +1008,8 @@ def main() -> None:
         st.session_state.analysis_outputs = None
     if "analysis_error" not in st.session_state:
         st.session_state.analysis_error = None
+    if "active_request_ticker" not in st.session_state:
+        st.session_state.active_request_ticker = ""
 
     tab_input, tab_outputs = st.tabs(["Inputs", "Outputs"])
 
@@ -1149,6 +1151,7 @@ def main() -> None:
         st.session_state.asset_status = resolution
         if resolution.get("success"):
             st.session_state.active_ticker = resolution["ticker"]
+            st.session_state.active_request_ticker = resolution.get("requested_ticker") or resolution["ticker"]
             _clear_analysis_state()
             st.rerun()
 
@@ -1160,11 +1163,8 @@ def main() -> None:
         return
 
     available_assets = app_data.load_available_tickers()
-    metadata = app_data.load_asset_metadata(st.session_state.active_ticker)
-    price_rows = app_data.load_price_history(st.session_state.active_ticker)
-    price_frame = app_data.prepare_price_history_frame(price_rows)
-
-    if metadata is None or price_frame.empty:
+    asset_dataset_result = app_data.load_asset_dataset_for_app(st.session_state.active_ticker)
+    if not asset_dataset_result.get("success"):
         status = st.session_state.asset_status or {}
         if status.get("status") == "post_ingest_readback_failed":
             with tab_outputs:
@@ -1176,17 +1176,16 @@ def main() -> None:
             st.session_state.active_ticker = ""
             return
         with tab_outputs:
-            _render_empty_state(
-                f"No historical price data is available for {st.session_state.active_ticker} in the local database."
-            )
+            if asset_dataset_result.get("status") in {"missing_metadata", "missing_price_history", "insufficient_price_history"}:
+                _render_empty_state(asset_dataset_result.get("message", "Asset data is not available yet."))
+            else:
+                st.error(asset_dataset_result.get("message", "Asset data validation failed before downstream analysis."))
         return
 
-    if price_frame["analysis_price"].dropna().shape[0] < 2:
-        with tab_outputs:
-            _render_empty_state(
-                f"{st.session_state.active_ticker} does not have enough clean price observations for analytics yet."
-            )
-        return
+    asset_dataset = asset_dataset_result["dataset"]
+    metadata = asset_dataset.metadata
+    price_rows = asset_dataset.price_rows
+    price_frame = asset_dataset.price_frame
 
     if generate_report_clicked:
         report_status_indicator = st.status(
@@ -1243,7 +1242,8 @@ def main() -> None:
 
     if run_analysis_clicked:
         LOGGER.info(
-            "Run analysis started: ticker=%s forecast_horizon=%s simulation_count=%s",
+            "Run analysis started: requested_ticker=%s active_ticker=%s forecast_horizon=%s simulation_count=%s",
+            st.session_state.active_request_ticker or st.session_state.active_ticker,
             st.session_state.active_ticker,
             forecast_horizon,
             simulation_count,

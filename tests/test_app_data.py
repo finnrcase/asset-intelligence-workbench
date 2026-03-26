@@ -6,6 +6,11 @@ from src.utils import app_data
 
 
 class AppDataTests(unittest.TestCase):
+    def test_normalize_app_ticker_handles_case_whitespace_and_separator_variants(self) -> None:
+        self.assertEqual(app_data.normalize_app_ticker("  brk/b "), "BRK-B")
+        self.assertEqual(app_data.normalize_app_ticker(" msft "), "MSFT")
+        self.assertEqual(app_data.normalize_app_ticker("btc-usd"), "BTC-USD")
+
     @patch("src.utils.app_data.MARKET_DATA_SERVICE")
     def test_ingest_single_ticker_returns_service_result(self, mock_service) -> None:
         mock_service.ingest_ticker.return_value = IngestionResult(
@@ -49,6 +54,68 @@ class AppDataTests(unittest.TestCase):
         )
         self.assertFalse(result["used_cache"])
         self.assertEqual(result["sentiment_records_count"], 0)
+
+    @patch("src.utils.app_data._has_stored_price_history", return_value=True)
+    @patch("src.utils.app_data.ticker_exists", return_value=True)
+    def test_ingest_single_ticker_prefers_stored_asset_for_existing_manual_ticker(
+        self,
+        _mock_exists,
+        _mock_prices,
+    ) -> None:
+        result = app_data.ingest_single_ticker(" voo ")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["ticker"], "VOO")
+        self.assertEqual(result["status"], "database")
+        self.assertTrue(result["used_cached_asset"])
+
+    @patch("src.utils.app_data.load_price_history", return_value=[])
+    @patch("src.utils.app_data.load_asset_metadata", return_value={"ticker": "VOO", "asset_name": "Vanguard 500"})
+    def test_load_asset_dataset_for_app_rejects_missing_price_history(
+        self,
+        _mock_metadata,
+        _mock_prices,
+    ) -> None:
+        result = app_data.load_asset_dataset_for_app("VOO")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "missing_price_history")
+
+    @patch(
+        "src.utils.app_data.load_price_history",
+        return_value=[
+            {
+                "price_date": "2026-03-20",
+                "close_price": 100.0,
+                "adjusted_close": 100.0,
+                "open_price": 99.0,
+                "high_price": 101.0,
+                "low_price": 98.0,
+                "volume": 1000,
+            },
+            {
+                "price_date": "2026-03-21",
+                "close_price": 101.0,
+                "adjusted_close": 101.0,
+                "open_price": 100.0,
+                "high_price": 102.0,
+                "low_price": 99.0,
+                "volume": 1200,
+            },
+        ],
+    )
+    @patch("src.utils.app_data.load_asset_metadata", return_value={"ticker": "VOO", "asset_name": "Vanguard 500"})
+    def test_load_asset_dataset_for_app_returns_validated_dataset(
+        self,
+        _mock_metadata,
+        _mock_prices,
+    ) -> None:
+        result = app_data.load_asset_dataset_for_app("VOO")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["dataset"].ticker, "VOO")
+        self.assertEqual(result["dataset"].metadata["ticker"], "VOO")
+        self.assertEqual(result["dataset"].price_frame["analysis_price"].dropna().shape[0], 2)
 
     @patch(
         "src.utils.app_data._sentiment_provider_diagnostics",

@@ -9,7 +9,9 @@ calculation.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
+from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
@@ -61,6 +63,17 @@ MARKET_DATA_SERVICE = MarketDataIngestionService()
 LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class AssetDataset:
+    """Canonical asset dataset returned by the intake layer."""
+
+    ticker: str
+    metadata: dict[str, Any]
+    price_rows: list[dict[str, Any]]
+    price_frame: pd.DataFrame
+    validation_notes: list[str]
+
+
 def load_available_tickers() -> list[dict[str, Any]]:
     """Return the available asset universe for app selection controls."""
 
@@ -105,7 +118,37 @@ def normalize_app_ticker(ticker: str) -> str:
 
     if not ticker or not ticker.strip():
         return ""
-    return ticker.strip().upper()
+    normalized = ticker.strip().upper()
+    normalized = normalized.replace("–", "-").replace("—", "-").replace("−", "-")
+    normalized = re.sub(r"\s+", "", normalized)
+    normalized = re.sub(r"(?<=\w)/(?=\w)", "-", normalized)
+    return normalized
+
+
+def _build_asset_resolution_result(
+    *,
+    success: bool,
+    ticker: str,
+    status: str,
+    message: str,
+    requested_ticker: str,
+    input_source: str,
+    resolved_ticker: str | None = None,
+    used_cached_asset: bool = False,
+) -> dict[str, Any]:
+    """Build a consistent resolution payload for the app runtime."""
+
+    return {
+        "success": success,
+        "ticker": ticker,
+        "resolved_ticker": resolved_ticker or ticker,
+        "requested_ticker": requested_ticker,
+        "normalized_ticker": normalize_app_ticker(requested_ticker),
+        "input_source": input_source,
+        "status": status,
+        "message": message,
+        "used_cached_asset": used_cached_asset,
+    }
 
 
 def ticker_exists(ticker: str) -> bool:
@@ -130,40 +173,95 @@ def ingest_single_ticker(
 
     normalized_ticker = normalize_app_ticker(ticker)
     if not normalized_ticker:
-        return {
-            "success": False,
-            "ticker": "",
-            "status": "invalid_input",
-            "message": "Enter a ticker symbol before attempting to load an asset.",
-        }
+        return _build_asset_resolution_result(
+            success=False,
+            ticker="",
+            status="invalid_input",
+            message="Enter a ticker symbol before attempting to load an asset.",
+            requested_ticker=ticker,
+            input_source="manual",
+        )
+
+    LOGGER.info(
+        "Asset intake start: requested_ticker=%s normalized_ticker=%s lookback_days=%s",
+        ticker,
+        normalized_ticker,
+        lookback_days,
+    )
+
+    if ticker_exists(normalized_ticker) and _has_stored_price_history(normalized_ticker):
+        LOGGER.info(
+            "Asset intake resolved from local storage without provider fetch: requested_ticker=%s normalized_ticker=%s",
+            ticker,
+            normalized_ticker,
+        )
+        return _build_asset_resolution_result(
+            success=True,
+            ticker=normalized_ticker,
+            resolved_ticker=normalized_ticker,
+            status="database",
+            message=f"{normalized_ticker} was loaded from the local database.",
+            requested_ticker=ticker,
+            input_source="manual",
+            used_cached_asset=True,
+        )
 
     result = MARKET_DATA_SERVICE.ingest_ticker(
         ticker=normalized_ticker,
         lookback_days=lookback_days,
     )
 
-    response = {
-        "success": result.success,
-        "ticker": result.ticker,
-        "status": result.status,
-        "message": result.message,
-    }
+    response = _build_asset_resolution_result(
+        success=result.success,
+        ticker=result.ticker,
+        resolved_ticker=result.ticker,
+        status=result.status,
+        message=result.message,
+        requested_ticker=ticker,
+        input_source="manual",
+        used_cached_asset=result.status == "cache_hit",
+    )
     if not result.success:
+        LOGGER.warning(
+            "Asset intake fetch failed: requested_ticker=%s normalized_ticker=%s resolved_ticker=%s status=%s",
+            ticker,
+            normalized_ticker,
+            result.ticker,
+            result.status,
+        )
         return response
 
     metadata = load_asset_metadata(normalized_ticker)
     has_prices = _has_stored_price_history(normalized_ticker)
-    if metadata is None or not has_prices:
-        return {
-            "success": False,
-            "ticker": normalized_ticker,
-            "status": "post_ingest_readback_failed",
-            "message": (
-                f"{normalized_ticker} was fetched, but the app could not read back the stored asset data "
-                "from the local database yet. Please try loading the ticker again."
+    metadata_ticker = normalize_app_ticker(str((metadata or {}).get("ticker") or normalized_ticker))
+    if metadata is None or not has_prices or metadata_ticker != normalized_ticker:
+        LOGGER.error(
+            "Asset intake storage validation failed: requested_ticker=%s normalized_ticker=%s metadata_present=%s has_prices=%s metadata_ticker=%s",
+            ticker,
+            normalized_ticker,
+            metadata is not None,
+            has_prices,
+            metadata_ticker,
+        )
+        return _build_asset_resolution_result(
+            success=False,
+            ticker=normalized_ticker,
+            status="post_ingest_readback_failed",
+            message=(
+                f"{normalized_ticker} was fetched, but the app could not read back a clean stored dataset "
+                "for the same ticker from the local database yet. Please try loading the ticker again."
             ),
-        }
+            requested_ticker=ticker,
+            input_source="manual",
+            resolved_ticker=metadata_ticker or normalized_ticker,
+        )
 
+    LOGGER.info(
+        "Asset intake storage validated: requested_ticker=%s normalized_ticker=%s resolved_ticker=%s",
+        ticker,
+        normalized_ticker,
+        metadata_ticker,
+    )
     return response
 
 
@@ -179,26 +277,44 @@ def resolve_asset_for_app(
     loaded directly; missing assets are ingested on demand.
     """
 
-    manual_normalized = normalize_app_ticker(manual_ticker or "")
+    requested_manual_ticker = manual_ticker or ""
+    requested_selected_ticker = selected_ticker or ""
+    manual_normalized = normalize_app_ticker(requested_manual_ticker)
     if manual_normalized:
+        LOGGER.info(
+            "Asset resolution request: source=manual entered_asset=%s normalized_asset=%s",
+            requested_manual_ticker,
+            manual_normalized,
+        )
         return ingest_single_ticker(manual_normalized, lookback_days=lookback_days)
 
-    selected_normalized = normalize_app_ticker(selected_ticker or "")
+    selected_normalized = normalize_app_ticker(requested_selected_ticker)
     if not selected_normalized:
-        return {
-            "success": False,
-            "ticker": "",
-            "status": "no_selection",
-            "message": "Select an existing asset or enter a new ticker to continue.",
-        }
+        return _build_asset_resolution_result(
+            success=False,
+            ticker="",
+            status="no_selection",
+            message="Select an existing asset or enter a new ticker to continue.",
+            requested_ticker="",
+            input_source="none",
+        )
 
     if ticker_exists(selected_normalized):
-        return {
-            "success": True,
-            "ticker": selected_normalized,
-            "status": "database",
-            "message": f"{selected_normalized} was loaded from the local database.",
-        }
+        LOGGER.info(
+            "Asset resolution request: source=stored entered_asset=%s normalized_asset=%s",
+            requested_selected_ticker,
+            selected_normalized,
+        )
+        return _build_asset_resolution_result(
+            success=True,
+            ticker=selected_normalized,
+            resolved_ticker=selected_normalized,
+            status="database",
+            message=f"{selected_normalized} was loaded from the local database.",
+            requested_ticker=requested_selected_ticker,
+            input_source="stored",
+            used_cached_asset=True,
+        )
 
     return ingest_single_ticker(selected_normalized, lookback_days=lookback_days)
 
@@ -236,6 +352,94 @@ def prepare_price_history_frame(price_rows: list[dict[str, Any]]) -> pd.DataFram
     frame = frame.sort_values("price_date").set_index("price_date")
     frame.index.name = "price_date"
     return frame
+
+
+def load_asset_dataset_for_app(ticker: str) -> dict[str, Any]:
+    """Load and validate the canonical asset dataset used by downstream layers."""
+
+    normalized_ticker = normalize_app_ticker(ticker)
+    if not normalized_ticker:
+        return {
+            "success": False,
+            "ticker": "",
+            "status": "invalid_input",
+            "message": "A valid ticker is required before asset data can be loaded.",
+        }
+
+    LOGGER.info("Asset dataset load started: ticker=%s", normalized_ticker)
+    metadata = load_asset_metadata(normalized_ticker)
+    price_rows = load_price_history(normalized_ticker)
+    price_frame = prepare_price_history_frame(price_rows)
+
+    validation_notes: list[str] = []
+    if metadata is None:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "missing_metadata",
+            "message": f"No stored asset metadata is available for {normalized_ticker}.",
+        }
+
+    metadata_ticker = normalize_app_ticker(str(metadata.get("ticker") or normalized_ticker))
+    if metadata_ticker != normalized_ticker:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "asset_identity_mismatch",
+            "message": (
+                f"Stored asset metadata for {normalized_ticker} resolved to {metadata_ticker}, "
+                "so the dataset was rejected before downstream analysis."
+            ),
+        }
+
+    if price_frame.empty:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "missing_price_history",
+            "message": f"No historical price data is available for {normalized_ticker} in the local database.",
+        }
+
+    if "analysis_price" not in price_frame.columns:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "invalid_price_history",
+            "message": f"{normalized_ticker} price history is missing the required analysis price column.",
+        }
+
+    clean_price_count = int(price_frame["analysis_price"].dropna().shape[0])
+    if clean_price_count < 2:
+        return {
+            "success": False,
+            "ticker": normalized_ticker,
+            "status": "insufficient_price_history",
+            "message": f"{normalized_ticker} does not have enough clean price observations for analytics yet.",
+        }
+
+    if not price_frame.index.is_monotonic_increasing:
+        validation_notes.append("price history was normalized into chronological order")
+
+    LOGGER.info(
+        "Asset dataset validation succeeded: ticker=%s metadata_ticker=%s price_rows=%s clean_prices=%s",
+        normalized_ticker,
+        metadata_ticker,
+        len(price_rows),
+        clean_price_count,
+    )
+    return {
+        "success": True,
+        "ticker": normalized_ticker,
+        "status": "validated",
+        "message": f"{normalized_ticker} dataset validated for downstream analysis.",
+        "dataset": AssetDataset(
+            ticker=normalized_ticker,
+            metadata=metadata,
+            price_rows=price_rows,
+            price_frame=price_frame,
+            validation_notes=validation_notes,
+        ),
+    }
 
 
 def get_recent_price_table(frame: pd.DataFrame, rows: int = 10) -> pd.DataFrame:
