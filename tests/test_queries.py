@@ -102,7 +102,8 @@ class QueryTests(unittest.TestCase):
             )
 
     def tearDown(self) -> None:
-        self.connection_module.ENGINE.dispose()
+        if self.connection_module.ENGINE is not None:
+            self.connection_module.ENGINE.dispose()
         if self.sqlite_path.exists():
             self.sqlite_path.unlink()
 

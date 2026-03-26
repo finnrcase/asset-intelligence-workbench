@@ -97,7 +97,8 @@ class MarketDataServiceTests(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        self.connection_module.ENGINE.dispose()
+        if self.connection_module.ENGINE is not None:
+            self.connection_module.ENGINE.dispose()
         for suffix in ("", "-wal", "-shm", "-journal"):
             path = Path(f"{self.sqlite_path}{suffix}")
             if path.exists():

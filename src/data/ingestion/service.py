@@ -17,6 +17,7 @@ from src.data.providers.market_data_provider import ProviderUnavailableError
 from src.data.providers.market_data_provider import YFinanceMarketDataProvider
 from src.data.storage.repository import MarketDataRepository
 from src.database.connection import initialize_database
+from src.utils.config import DatabaseConfigurationError
 
 
 LOGGER = logging.getLogger(__name__)
@@ -88,7 +89,33 @@ class MarketDataIngestionService:
                 source="validation",
             )
 
-        initialize_database()
+        try:
+            initialize_database()
+            LOGGER.info("Market-data ingestion database initialization succeeded for %s", normalized_ticker)
+        except DatabaseConfigurationError as exc:
+            LOGGER.exception("Market-data ingestion database initialization failed for %s", normalized_ticker)
+            return IngestionResult(
+                success=False,
+                ticker=normalized_ticker,
+                status="database_unavailable",
+                message=(
+                    f"The local SQL database is unavailable for {normalized_ticker}. "
+                    f"Detail: {exc}"
+                ),
+                source="storage",
+            )
+        except Exception as exc:
+            LOGGER.exception("Unexpected database initialization failure for %s", normalized_ticker)
+            return IngestionResult(
+                success=False,
+                ticker=normalized_ticker,
+                status="database_unavailable",
+                message=(
+                    f"The local SQL database could not be prepared for {normalized_ticker}. "
+                    f"Detail: {exc}"
+                ),
+                source="storage",
+            )
 
         cache_snapshot = self.repository.get_cached_market_data_snapshot(normalized_ticker)
         if cache_snapshot.is_cache_hit:

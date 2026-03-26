@@ -1243,6 +1243,9 @@ def main() -> None:
             st.session_state.active_request_ticker = resolution.get("requested_ticker") or resolution["ticker"]
             _clear_analysis_state()
             st.rerun()
+        st.session_state.active_ticker = ""
+        st.session_state.active_request_ticker = requested_ticker
+        _clear_analysis_state()
 
     if not st.session_state.active_ticker:
         with tab_outputs:
@@ -1330,129 +1333,141 @@ def main() -> None:
     )
 
     if run_analysis_clicked:
-        LOGGER.info(
-            "Run analysis started: requested_ticker=%s active_ticker=%s forecast_horizon=%s simulation_count=%s",
-            st.session_state.active_request_ticker or st.session_state.active_ticker,
-            st.session_state.active_ticker,
-            forecast_horizon,
-            simulation_count,
-        )
-        analysis_status_indicator = st.status(
-            f"Running analysis for {st.session_state.active_ticker}...",
-            expanded=True,
-        )
-        try:
-            resolved_dataset_ticker = str(metadata.get("ticker") or "").strip().upper()
-            if resolved_dataset_ticker != st.session_state.active_ticker:
-                raise RuntimeError(
-                    "The loaded SQL dataset does not match the active asset selection. "
-                    "Reload the asset and run the analysis again."
-                )
-            if price_frame.empty or "analysis_price" not in price_frame.columns:
-                raise RuntimeError(
-                    "The loaded SQL dataset is missing the price history required for analysis."
-                )
+        if st.session_state.asset_status and not st.session_state.asset_status.get("success"):
+            st.session_state.analysis_outputs = None
+            st.session_state.analysis_error = st.session_state.asset_status.get(
+                "message",
+                "The requested asset could not be prepared from the SQL-backed data store.",
+            )
+            LOGGER.warning(
+                "Run analysis aborted before start: active_ticker=%s asset_status=%s",
+                st.session_state.active_ticker,
+                st.session_state.asset_status.get("status"),
+            )
+        else:
             LOGGER.info(
-                "Run analysis SQL dataset resolved: active_ticker=%s metadata_ticker=%s rows=%s",
+                "Run analysis started: requested_ticker=%s active_ticker=%s forecast_horizon=%s simulation_count=%s",
+                st.session_state.active_request_ticker or st.session_state.active_ticker,
                 st.session_state.active_ticker,
-                resolved_dataset_ticker,
-                len(price_frame),
+                forecast_horizon,
+                simulation_count,
             )
-
-            sentiment_status = st.session_state.sentiment_status_by_ticker.get(
-                st.session_state.active_ticker
-            )
-            if sentiment_status is None:
-                LOGGER.info("Run analysis sentiment fetch started: ticker=%s", st.session_state.active_ticker)
-                analysis_status_indicator.write("Fetching recent sentiment context.")
-                sentiment_status = _ensure_sentiment_with_timeout(
-                    st.session_state.active_ticker,
-                    page_size=DEFAULT_SENTIMENT_PAGE_SIZE,
-                )
-                st.session_state.sentiment_status_by_ticker[st.session_state.active_ticker] = sentiment_status
-                LOGGER.info("Run analysis sentiment fetch completed: ticker=%s", st.session_state.active_ticker)
-
-            LOGGER.info("Run analysis analytics build started: ticker=%s", st.session_state.active_ticker)
-            analysis_status_indicator.write("Building market analytics and risk outputs.")
-            return_frame = build_return_frame(price_frame, price_column="analysis_price")
-            ml_summary = _build_ml_summary_with_timeout(st.session_state.active_ticker)
-            rolling_volatility = compute_rolling_volatility(
-                return_frame["daily_return"],
-                window=ROLLING_VOLATILITY_WINDOW,
-            )
-            risk_summary = build_risk_summary(
-                price_frame,
-                price_column="analysis_price",
-                confidence_level=VAR_CONFIDENCE_LEVEL,
-                volatility_window=ROLLING_VOLATILITY_WINDOW,
-            )
-            LOGGER.info("Run analysis analytics build completed: ticker=%s", st.session_state.active_ticker)
-
-            LOGGER.info("Run analysis simulation started: ticker=%s", st.session_state.active_ticker)
-            analysis_status_indicator.write("Preparing output tables and simulation results.")
-            data_origin = (st.session_state.asset_status or {}).get("status", "database")
-            origin_label = "Newly Ingested" if data_origin == "ingested" else "Local Database"
-            sentiment_rows = app_data.load_recent_news_articles(
-                st.session_state.active_ticker,
-                limit=25,
-            )
-            sentiment_summary = app_data.get_sentiment_summary(sentiment_rows)
-            recent_prices = app_data.get_recent_price_table(price_frame, rows=10)
-
-            simulation_payload = _run_simulation_with_timeout(
-                st.session_state.active_ticker,
-                price_frame,
-                price_column="analysis_price",
-                ml_forecast_snapshot=ml_summary["snapshot"],
-                horizon_days=forecast_horizon,
-                simulation_count=simulation_count,
-            )
-            simulation_result = simulation_payload["result"]
-            simulation_error = simulation_payload["error"]
-            LOGGER.info(
-                "Run analysis simulation completed: ticker=%s simulation_error=%s",
-                st.session_state.active_ticker,
-                simulation_error is not None,
-            )
-
-            st.session_state.analysis_outputs = {
-                "signature": analysis_signature,
-                "metadata": metadata,
-                "price_frame": price_frame,
-                "return_frame": return_frame,
-                "ml_summary": ml_summary,
-                "rolling_volatility": rolling_volatility,
-                "risk_summary": risk_summary,
-                "origin_label": origin_label,
-                "sentiment_status": sentiment_status,
-                "sentiment_rows": sentiment_rows,
-                "sentiment_summary": sentiment_summary,
-                "recent_prices": recent_prices,
-                "simulation_result": simulation_result,
-                "simulation_error": simulation_error,
-            }
-            st.session_state.analysis_error = None
-            LOGGER.info(
-                "Run analysis outputs stored: ticker=%s signature=%s",
-                st.session_state.active_ticker,
-                analysis_signature,
-            )
-            analysis_status_indicator.update(
-                label=f"Analysis complete for {st.session_state.active_ticker}.",
-                state="complete",
-                expanded=False,
-            )
-            LOGGER.info("Run analysis finished: ticker=%s", st.session_state.active_ticker)
-        except Exception as exc:
-            _clear_analysis_state()
-            st.session_state.analysis_error = str(exc)
-            LOGGER.exception("Run analysis failed: ticker=%s", st.session_state.active_ticker)
-            analysis_status_indicator.update(
-                label=f"Analysis failed for {st.session_state.active_ticker}.",
-                state="error",
+            analysis_status_indicator = st.status(
+                f"Running analysis for {st.session_state.active_ticker}...",
                 expanded=True,
             )
-            analysis_status_indicator.write(str(exc))
+            try:
+                resolved_dataset_ticker = str(metadata.get("ticker") or "").strip().upper()
+                if resolved_dataset_ticker != st.session_state.active_ticker:
+                    raise RuntimeError(
+                        "The loaded SQL dataset does not match the active asset selection. "
+                        "Reload the asset and run the analysis again."
+                    )
+                if price_frame.empty or "analysis_price" not in price_frame.columns:
+                    raise RuntimeError(
+                        "The loaded SQL dataset is missing the price history required for analysis."
+                    )
+                LOGGER.info(
+                    "Run analysis SQL dataset resolved: active_ticker=%s metadata_ticker=%s rows=%s",
+                    st.session_state.active_ticker,
+                    resolved_dataset_ticker,
+                    len(price_frame),
+                )
+
+                sentiment_status = st.session_state.sentiment_status_by_ticker.get(
+                    st.session_state.active_ticker
+                )
+                if sentiment_status is None:
+                    LOGGER.info("Run analysis sentiment fetch started: ticker=%s", st.session_state.active_ticker)
+                    analysis_status_indicator.write("Fetching recent sentiment context.")
+                    sentiment_status = _ensure_sentiment_with_timeout(
+                        st.session_state.active_ticker,
+                        page_size=DEFAULT_SENTIMENT_PAGE_SIZE,
+                    )
+                    st.session_state.sentiment_status_by_ticker[st.session_state.active_ticker] = sentiment_status
+                    LOGGER.info("Run analysis sentiment fetch completed: ticker=%s", st.session_state.active_ticker)
+
+                LOGGER.info("Run analysis analytics build started: ticker=%s", st.session_state.active_ticker)
+                analysis_status_indicator.write("Building market analytics and risk outputs.")
+                return_frame = build_return_frame(price_frame, price_column="analysis_price")
+                ml_summary = _build_ml_summary_with_timeout(st.session_state.active_ticker)
+                rolling_volatility = compute_rolling_volatility(
+                    return_frame["daily_return"],
+                    window=ROLLING_VOLATILITY_WINDOW,
+                )
+                risk_summary = build_risk_summary(
+                    price_frame,
+                    price_column="analysis_price",
+                    confidence_level=VAR_CONFIDENCE_LEVEL,
+                    volatility_window=ROLLING_VOLATILITY_WINDOW,
+                )
+                LOGGER.info("Run analysis analytics build completed: ticker=%s", st.session_state.active_ticker)
+
+                LOGGER.info("Run analysis simulation started: ticker=%s", st.session_state.active_ticker)
+                analysis_status_indicator.write("Preparing output tables and simulation results.")
+                data_origin = (st.session_state.asset_status or {}).get("status", "database")
+                origin_label = "Newly Ingested" if data_origin == "ingested" else "Local Database"
+                sentiment_rows = app_data.load_recent_news_articles(
+                    st.session_state.active_ticker,
+                    limit=25,
+                )
+                sentiment_summary = app_data.get_sentiment_summary(sentiment_rows)
+                recent_prices = app_data.get_recent_price_table(price_frame, rows=10)
+
+                simulation_payload = _run_simulation_with_timeout(
+                    st.session_state.active_ticker,
+                    price_frame,
+                    price_column="analysis_price",
+                    ml_forecast_snapshot=ml_summary["snapshot"],
+                    horizon_days=forecast_horizon,
+                    simulation_count=simulation_count,
+                )
+                simulation_result = simulation_payload["result"]
+                simulation_error = simulation_payload["error"]
+                LOGGER.info(
+                    "Run analysis simulation completed: ticker=%s simulation_error=%s",
+                    st.session_state.active_ticker,
+                    simulation_error is not None,
+                )
+
+                st.session_state.analysis_outputs = {
+                    "signature": analysis_signature,
+                    "metadata": metadata,
+                    "price_frame": price_frame,
+                    "return_frame": return_frame,
+                    "ml_summary": ml_summary,
+                    "rolling_volatility": rolling_volatility,
+                    "risk_summary": risk_summary,
+                    "origin_label": origin_label,
+                    "sentiment_status": sentiment_status,
+                    "sentiment_rows": sentiment_rows,
+                    "sentiment_summary": sentiment_summary,
+                    "recent_prices": recent_prices,
+                    "simulation_result": simulation_result,
+                    "simulation_error": simulation_error,
+                }
+                st.session_state.analysis_error = None
+                LOGGER.info(
+                    "Run analysis outputs stored: ticker=%s signature=%s",
+                    st.session_state.active_ticker,
+                    analysis_signature,
+                )
+                analysis_status_indicator.update(
+                    label=f"Analysis complete for {st.session_state.active_ticker}.",
+                    state="complete",
+                    expanded=False,
+                )
+                LOGGER.info("Run analysis finished: ticker=%s", st.session_state.active_ticker)
+            except Exception as exc:
+                _clear_analysis_state()
+                st.session_state.analysis_error = str(exc)
+                LOGGER.exception("Run analysis failed: ticker=%s", st.session_state.active_ticker)
+                analysis_status_indicator.update(
+                    label=f"Analysis failed for {st.session_state.active_ticker}.",
+                    state="error",
+                    expanded=True,
+                )
+                analysis_status_indicator.write(str(exc))
 
     analysis_outputs = st.session_state.analysis_outputs
     has_current_outputs = (

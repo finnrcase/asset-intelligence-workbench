@@ -40,9 +40,11 @@ from src.utils.config import get_config
 
 
 LOGGER = logging.getLogger(__name__)
-DATABASE_CONFIG = get_config()
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SCHEMA_PATH = PROJECT_ROOT / "sql" / "schema.sql"
+DATABASE_CONFIG: AppConfig | None = None
+ENGINE: Engine | None = None
+SessionLocal: sessionmaker[Session] | None = None
 
 
 class Base(DeclarativeBase):
@@ -254,22 +256,6 @@ def create_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
-ENGINE = create_database_engine(DATABASE_CONFIG)
-SessionLocal = create_session_factory(ENGINE)
-
-
-def get_engine() -> Engine:
-    """Return the current shared engine."""
-
-    return ENGINE
-
-
-def get_session_factory() -> sessionmaker[Session]:
-    """Return the current shared session factory."""
-
-    return SessionLocal
-
-
 def _database_config_signature(config: AppConfig) -> tuple[str, str, bool]:
     """Return a stable signature for deciding whether the shared engine must rotate."""
 
@@ -280,44 +266,82 @@ def _database_config_signature(config: AppConfig) -> tuple[str, str, bool]:
     )
 
 
-def ensure_database_engine() -> Engine:
-    """
-    Return the shared engine without forcing a config revalidation on every UI rerun.
+def _dispose_engine_if_present() -> None:
+    """Dispose the existing shared engine when one has already been initialized."""
 
-    Streamlit reruns the script for ordinary widget interactions, so the app should
-    reuse the already-initialized SQL engine unless a caller explicitly requests a
-    reconfiguration.
-    """
+    global ENGINE
 
-    return ENGINE
+    if ENGINE is not None:
+        ENGINE.dispose()
 
 
-def reset_database_engine() -> Engine:
-    """Dispose and rebuild the shared engine/session factory when config changes."""
+def _set_database_runtime(config: AppConfig) -> Engine:
+    """Bind the shared engine/session globals to the fully resolved runtime config."""
 
     global DATABASE_CONFIG
     global ENGINE
     global SessionLocal
 
-    refreshed_config = get_config()
-    if _database_config_signature(refreshed_config) == _database_config_signature(DATABASE_CONFIG):
-        LOGGER.info(
-            "Reusing existing SQLAlchemy engine. bound_url=%s sqlite_path=%s",
-            ENGINE.url,
-            DATABASE_CONFIG.sqlite_path,
-        )
-        return ENGINE
-
-    ENGINE.dispose()
-    DATABASE_CONFIG = refreshed_config
-    ENGINE = create_database_engine(DATABASE_CONFIG)
+    _dispose_engine_if_present()
+    DATABASE_CONFIG = config
+    ENGINE = create_database_engine(config)
     SessionLocal = create_session_factory(ENGINE)
     LOGGER.info(
-        "Rebuilt SQLAlchemy engine with resolved database_url=%s sqlite_path=%s",
-        DATABASE_CONFIG.database_url,
+        "Database runtime bound to resolved database_url=%s sqlite_path=%s",
+        config.database_url,
+        config.sqlite_path,
+    )
+    return ENGINE
+
+
+def ensure_database_engine(force_refresh: bool = False) -> Engine:
+    """
+    Ensure the shared engine is bound to the fully resolved runtime config.
+
+    This is the single entry point for engine/session initialization so the app
+    never continues with a stale engine that points at an outdated SQLite path.
+    """
+
+    refreshed_config = get_config()
+
+    if force_refresh or DATABASE_CONFIG is None or ENGINE is None or SessionLocal is None:
+        return _set_database_runtime(refreshed_config)
+
+    if _database_config_signature(refreshed_config) != _database_config_signature(DATABASE_CONFIG):
+        LOGGER.info(
+            "Database runtime target changed. previous_url=%s new_url=%s",
+            DATABASE_CONFIG.database_url,
+            refreshed_config.database_url,
+        )
+        return _set_database_runtime(refreshed_config)
+
+    LOGGER.info(
+        "Reusing existing SQLAlchemy engine. bound_url=%s sqlite_path=%s",
+        ENGINE.url,
         DATABASE_CONFIG.sqlite_path,
     )
     return ENGINE
+
+
+def get_engine() -> Engine:
+    """Return the current shared engine, initializing it lazily when needed."""
+
+    return ensure_database_engine()
+
+
+def get_session_factory() -> sessionmaker[Session]:
+    """Return the current shared session factory, initializing it lazily when needed."""
+
+    ensure_database_engine()
+    assert SessionLocal is not None
+    return SessionLocal
+
+
+def reset_database_engine() -> Engine:
+    """Force a rebuild of the shared engine/session using the final resolved DB path."""
+
+    LOGGER.info("Resetting database engine using the current resolved runtime config.")
+    return ensure_database_engine(force_refresh=True)
 
 
 @contextmanager
@@ -329,7 +353,8 @@ def session_scope() -> Iterator[Session]:
     service modules without scattering commit/rollback boilerplate everywhere.
     """
 
-    session = SessionLocal()
+    session_factory = get_session_factory()
+    session = session_factory()
     try:
         yield session
         session.commit()
@@ -348,7 +373,9 @@ def initialize_database(schema_path: Path | None = None) -> None:
     metadata is used to create the tables represented by the ORM models.
     """
 
-    runtime_config = get_config()
+    engine = ensure_database_engine()
+    assert DATABASE_CONFIG is not None
+    runtime_config = DATABASE_CONFIG
     LOGGER.info(
         "Initializing database schema. database_url=%s sqlite_path=%s",
         runtime_config.database_url,
@@ -364,9 +391,9 @@ def initialize_database(schema_path: Path | None = None) -> None:
 
     if resolved_schema_path is not None:
         sql_text = resolved_schema_path.read_text(encoding="utf-8")
-        with ENGINE.begin() as connection:
+        with engine.begin() as connection:
             for statement in [chunk.strip() for chunk in sql_text.split(";") if chunk.strip()]:
                 connection.exec_driver_sql(statement)
         return
 
-    Base.metadata.create_all(bind=ENGINE)
+    Base.metadata.create_all(bind=engine)
