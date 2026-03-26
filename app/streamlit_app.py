@@ -1176,7 +1176,7 @@ def main() -> None:
             _render_section_intro(
                 "Simulation Settings",
                 "Set the forward analysis range",
-                "Preserve the current modeling behavior while tuning the horizon and path count used in scenario generation and PDF output.",
+                "Adjust the forecast horizon and scenario count used in the analysis and report outputs.",
             )
             forecast_horizon = st.slider(
                 "Forecast Horizon (Trading Days)",
@@ -1669,7 +1669,7 @@ def main() -> None:
             ]
             score_reason_rows = [row for row in score_reason_rows if row["Reason"]]
             if score_reason_rows:
-                st.caption("Model notes")
+                st.caption("Score rationale")
                 st.dataframe(score_reason_rows, use_container_width=True, hide_index=True)
 
             model_detail_rows = [
@@ -1774,7 +1774,7 @@ def main() -> None:
                 and sentiment_status.get("status") == "database"
                 and not sentiment_ui_message
             ):
-                st.caption("Recent sentiment was loaded from the stored article set.")
+                st.caption("Recent sentiment was loaded from stored article coverage.")
 
             _render_inline_note(
                 "Recent news sentiment is based on stored headline and article records and is intended to provide directional context for the broader analysis."
@@ -2224,7 +2224,7 @@ def main() -> None:
         ]
         score_reason_rows = [row for row in score_reason_rows if row["Reason"]]
         if score_reason_rows:
-            st.caption("ML coverage notes")
+            st.caption("Score rationale")
             st.dataframe(score_reason_rows, use_container_width=True, hide_index=True)
 
         model_detail_rows = [
@@ -2330,7 +2330,7 @@ def main() -> None:
             and sentiment_status.get("status") == "database"
             and not sentiment_ui_message
         ):
-            st.caption("Recent sentiment was loaded from the local database cache.")
+            st.caption("Recent sentiment was loaded from stored coverage.")
 
         _render_inline_note(
             "Recent news sentiment is based on stored headline and article records plus a lightweight lexical score intended for directional context rather than deep NLP inference."
