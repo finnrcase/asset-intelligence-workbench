@@ -10,6 +10,8 @@ import logging
 import math
 import traceback
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
 import streamlit as st
@@ -75,6 +77,7 @@ VAR_CONFIDENCE_LEVEL = 0.95
 DEFAULT_FORECAST_HORIZON = 63
 DEFAULT_SIMULATION_COUNT = 500
 DEFAULT_SENTIMENT_PAGE_SIZE = 12
+ML_SUMMARY_TIMEOUT_SECONDS = 20
 DEPLOY_MARKER = "asset-intelligence-workbench-build-2026-03-22-A"
 LOGGER = logging.getLogger(__name__)
 APP_THEME_CSS = """
@@ -880,6 +883,40 @@ def _load_pdf_report_module():
     return importlib.reload(report_module), None
 
 
+def _build_ml_summary_with_timeout(ticker: str) -> dict[str, object]:
+    """Bound on-demand ML summary work so the Streamlit request cannot hang indefinitely."""
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(app_data.build_ml_forecast_summary, ticker)
+        try:
+            return future.result(timeout=ML_SUMMARY_TIMEOUT_SECONDS)
+        except FutureTimeoutError:
+            future.cancel()
+            return {
+                "available": False,
+                "snapshot": None,
+                "prediction_history": __import__("pandas").DataFrame(),
+                "feature_drivers": [],
+                "feature_importance": [],
+                "pillar_weights": [],
+                "pillar_contributions": [],
+                "build_status": {
+                    "success": False,
+                    "status": "ml_timeout",
+                    "message": (
+                        f"Machine-learning summary build for {ticker.upper()} exceeded "
+                        f"{ML_SUMMARY_TIMEOUT_SECONDS} seconds and was skipped for this run."
+                    ),
+                },
+                "target_definition": None,
+                "interpretation": (
+                    f"Machine-learning summary build for {ticker.upper()} exceeded "
+                    f"{ML_SUMMARY_TIMEOUT_SECONDS} seconds and was skipped for this run. "
+                    "The rest of the analysis remains available."
+                ),
+            }
+
+
 def _build_analysis_signature(ticker: str, forecast_horizon: int, simulation_count: int) -> tuple[str, int, int]:
     """Build a stable cache key for the current analysis request."""
 
@@ -1216,7 +1253,7 @@ def main() -> None:
 
             analysis_status_indicator.write("Building market analytics and risk outputs.")
             return_frame = build_return_frame(price_frame, price_column="analysis_price")
-            ml_summary = app_data.build_ml_forecast_summary(st.session_state.active_ticker)
+            ml_summary = _build_ml_summary_with_timeout(st.session_state.active_ticker)
             rolling_volatility = compute_rolling_volatility(
                 return_frame["daily_return"],
                 window=ROLLING_VOLATILITY_WINDOW,
