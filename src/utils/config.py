@@ -27,6 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "data" / "app.db"
 LEGACY_SQLITE_PATH = PROJECT_ROOT / "data" / "processed" / "asset_intelligence.db"
 DEFAULT_RUNTIME_SQLITE_DIRNAME = "asset-intelligence-workbench"
+HOSTED_RUNTIME_SQLITE_FILENAME = "asset_intelligence.db"
 SQLITE_IN_MEMORY_URL = "sqlite://"
 
 
@@ -195,7 +196,15 @@ def _get_runtime_sqlite_root() -> Path:
     return Path(tempfile.gettempdir()) / DEFAULT_RUNTIME_SQLITE_DIRNAME
 
 
-def get_default_writable_db_path(sqlite_filename: str = "app.db") -> Path:
+def get_runtime_environment_name(project_root: Path | None = None) -> str:
+    """Return a concise label for the current runtime environment."""
+
+    return "hosted" if _is_hosted_source_mount(project_root) else "local"
+
+
+def get_default_writable_db_path(
+    sqlite_filename: str = HOSTED_RUNTIME_SQLITE_FILENAME,
+) -> Path:
     """Return the default writable SQLite path for hosted or restricted runtimes."""
 
     return (_get_runtime_sqlite_root().resolve(strict=False) / sqlite_filename).resolve(strict=False)
@@ -204,7 +213,12 @@ def get_default_writable_db_path(sqlite_filename: str = "app.db") -> Path:
 def _build_runtime_sqlite_path(sqlite_path: Path) -> Path:
     """Return a writable fallback path for a SQLite file."""
 
-    return get_default_writable_db_path(sqlite_path.name)
+    runtime_filename = (
+        HOSTED_RUNTIME_SQLITE_FILENAME
+        if _should_prefer_runtime_sqlite_path(sqlite_path)
+        else sqlite_path.name
+    )
+    return get_default_writable_db_path(runtime_filename)
 
 
 def _build_ephemeral_runtime_sqlite_path(sqlite_path: Path) -> Path:
@@ -234,6 +248,27 @@ def _prepare_sqlite_candidate(candidate_path: Path, source_path: Path) -> Path:
     return candidate_path
 
 
+def resolve_final_sqlite_path(
+    database_url: str | None = None,
+    sqlite_path: Path | None = None,
+) -> Path:
+    """
+    Return the canonical filesystem path SQLite should target for this runtime.
+
+    This is the single resolver that decides whether the application should use
+    the configured local path or a hosted runtime-safe path.
+    """
+
+    configured_path = (
+        sqlite_path.expanduser().resolve(strict=False)
+        if sqlite_path is not None
+        else _resolve_sqlite_path(database_url)
+    )
+    if _should_prefer_runtime_sqlite_path(configured_path):
+        return _build_runtime_sqlite_path(configured_path)
+    return configured_path
+
+
 def prepare_sqlite_runtime(sqlite_path: Path, database_url: str) -> Path:
     """
     Return a writable SQLite path for runtime use.
@@ -246,7 +281,11 @@ def prepare_sqlite_runtime(sqlite_path: Path, database_url: str) -> Path:
     _validate_sqlite_database_url(database_url)
 
     resolved_path = sqlite_path.expanduser().resolve(strict=False)
-    should_prefer_runtime = _should_prefer_runtime_sqlite_path(resolved_path)
+    canonical_path = resolve_final_sqlite_path(
+        database_url=database_url,
+        sqlite_path=resolved_path,
+    )
+    should_prefer_runtime = canonical_path != resolved_path
 
     if should_prefer_runtime:
         LOGGER.warning(
@@ -255,15 +294,10 @@ def prepare_sqlite_runtime(sqlite_path: Path, database_url: str) -> Path:
             resolved_path,
         )
 
-    candidate_paths: list[Path] = []
-    if not should_prefer_runtime:
-        candidate_paths.append(resolved_path)
-    candidate_paths.extend(
-        [
-            _build_runtime_sqlite_path(resolved_path),
-            _build_ephemeral_runtime_sqlite_path(resolved_path),
-        ]
-    )
+    candidate_paths: list[Path] = [canonical_path]
+    if not should_prefer_runtime and canonical_path == resolved_path:
+        candidate_paths.append(_build_runtime_sqlite_path(resolved_path))
+    candidate_paths.append(_build_ephemeral_runtime_sqlite_path(resolved_path))
 
     unique_candidate_paths: list[Path] = []
     for candidate_path in candidate_paths:
@@ -419,7 +453,7 @@ def validate_sqlite_runtime(sqlite_path: Path, database_url: str) -> None:
 def get_resolved_sqlite_path(database_url: str | None = None) -> Path:
     """Return and log the fully resolved SQLite path used by the application."""
 
-    resolved_path = _resolve_sqlite_path(database_url)
+    resolved_path = resolve_final_sqlite_path(database_url=database_url)
     if not logging.getLogger().handlers:
         logging.basicConfig(level=logging.INFO)
     LOGGER.info("Resolved SQLite database path: %s", resolved_path)
@@ -481,8 +515,15 @@ def get_config() -> AppConfig:
     _load_environment()
 
     configured_database_url = os.getenv("DATABASE_URL")
-    sqlite_path = get_resolved_sqlite_path(configured_database_url)
-    LOGGER.info("Configured SQLite database path: %s", sqlite_path)
+    configured_sqlite_path = _resolve_sqlite_path(configured_database_url)
+    sqlite_path = resolve_final_sqlite_path(
+        database_url=configured_database_url,
+        sqlite_path=configured_sqlite_path,
+    )
+    runtime_environment = get_runtime_environment_name()
+    LOGGER.info("Runtime environment detected: %s", runtime_environment)
+    LOGGER.info("Configured SQLite database path: %s", configured_sqlite_path)
+    LOGGER.info("Resolved final SQLite database path: %s", sqlite_path)
     database_url = (
         configured_database_url
         if configured_database_url and not configured_database_url.startswith("sqlite")
@@ -493,19 +534,21 @@ def get_config() -> AppConfig:
     prices_freshness_hours = int(os.getenv("MARKET_DATA_PRICES_FRESHNESS_HOURS", "6"))
 
     if database_url.startswith("sqlite"):
-        original_sqlite_path = sqlite_path
+        original_sqlite_path = configured_sqlite_path
         try:
-            sqlite_path = prepare_sqlite_runtime(sqlite_path, database_url)
+            sqlite_path = prepare_sqlite_runtime(configured_sqlite_path, database_url)
             database_url = _build_default_database_url(sqlite_path)
             LOGGER.info(
                 "SQLite runtime fallback used: %s",
-                sqlite_path != original_sqlite_path,
+                sqlite_path != configured_sqlite_path,
             )
             LOGGER.info("Final SQLite database path: %s", sqlite_path)
             LOGGER.info("Final SQLAlchemy database URL: %s", database_url)
             log_sqlite_startup_diagnostics(database_url, sqlite_path=sqlite_path)
         except DatabaseConfigurationError as exc:
-            fallback_display_path = get_default_writable_db_path(original_sqlite_path.name)
+            fallback_display_path = get_default_writable_db_path(
+                sqlite_path.name if runtime_environment == "hosted" else original_sqlite_path.name
+            )
             LOGGER.warning(
                 "No writable filesystem SQLite path could be established. "
                 "Falling back to in-memory SQLite for this process. Original error: %s",
@@ -551,3 +594,4 @@ def get_config() -> AppConfig:
     )
 
     return config
+

@@ -52,13 +52,31 @@ class ConfigTests(unittest.TestCase):
         )
 
     def test_get_resolved_sqlite_path_logs_absolute_path(self) -> None:
-        expected_path = config._resolve_sqlite_path()
+        expected_path = config.resolve_final_sqlite_path()
 
         with self.assertLogs("src.utils.config", level="INFO") as captured:
             resolved = config.get_resolved_sqlite_path()
 
         self.assertEqual(resolved, expected_path)
         self.assertTrue(any(str(expected_path) in message for message in captured.output))
+
+    def test_resolve_final_sqlite_path_uses_runtime_target_for_hosted_repo_mount(self) -> None:
+        temp_root = TEST_ROOT / f"hosted_resolver_{uuid4().hex}"
+        project_root = temp_root / "mount" / "src" / "asset-intelligence-workbench"
+        source_path = project_root / "data" / "processed" / "asset_intelligence.db"
+        runtime_root = temp_root / "tmp" / "asset-intelligence-workbench"
+
+        try:
+            with patch("src.utils.config.PROJECT_ROOT", project_root):
+                with patch.dict(os.environ, {"SQLITE_RUNTIME_DIR": str(runtime_root)}, clear=False):
+                    resolved = config.resolve_final_sqlite_path(sqlite_path=source_path)
+
+            self.assertEqual(
+                resolved,
+                (runtime_root / config.HOSTED_RUNTIME_SQLITE_FILENAME).resolve(strict=False),
+            )
+        finally:
+            self._cleanup_tree(temp_root)
 
     def test_relative_sqlite_env_path_is_resolved_from_project_root(self) -> None:
         with patch.dict(os.environ, {"SQLITE_DB_PATH": "data/custom.db"}, clear=False):
@@ -450,3 +468,4 @@ class ConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
