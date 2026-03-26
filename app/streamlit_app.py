@@ -8,6 +8,7 @@ from html import escape
 import importlib
 import logging
 import math
+import os
 import traceback
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -78,6 +79,8 @@ DEFAULT_FORECAST_HORIZON = 63
 DEFAULT_SIMULATION_COUNT = 500
 DEFAULT_SENTIMENT_PAGE_SIZE = 12
 ML_SUMMARY_TIMEOUT_SECONDS = 20
+SENTIMENT_TIMEOUT_SECONDS = int(os.getenv("SENTIMENT_PROVIDER_TIMEOUT_SECONDS", "20"))
+SIMULATION_TIMEOUT_SECONDS = int(os.getenv("SIMULATION_TIMEOUT_SECONDS", "20"))
 DEPLOY_MARKER = "asset-intelligence-workbench-build-2026-03-22-A"
 LOGGER = logging.getLogger(__name__)
 APP_THEME_CSS = """
@@ -924,6 +927,86 @@ def _build_ml_summary_with_timeout(ticker: str) -> dict[str, object]:
         executor.shutdown(wait=False, cancel_futures=True)
 
 
+def _ensure_sentiment_with_timeout(ticker: str, page_size: int) -> dict[str, object]:
+    """Bound sentiment refresh work so analysis can fail clearly instead of hanging."""
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(
+        app_data.ensure_sentiment_for_ticker,
+        ticker,
+        page_size=page_size,
+    )
+    try:
+        return future.result(timeout=SENTIMENT_TIMEOUT_SECONDS)
+    except FutureTimeoutError:
+        future.cancel()
+        LOGGER.warning(
+            "Run analysis sentiment fetch timed out for %s after %s seconds.",
+            ticker,
+            SENTIMENT_TIMEOUT_SECONDS,
+        )
+        return {
+            "success": False,
+            "ticker": ticker.upper(),
+            "status": "sentiment_timeout",
+            "message": (
+                f"Recent sentiment could not be refreshed within {SENTIMENT_TIMEOUT_SECONDS} seconds."
+            ),
+            "ui_message": (
+                "Recent sentiment is temporarily unavailable for this run because the refresh exceeded the allowed time."
+            ),
+            "debug_message": "sentiment_refresh_timeout",
+            "fetched": False,
+            "article_count": 0,
+            "sentiment_records_count": 0,
+            "provider_used": None,
+            "used_cache": False,
+            "sentiment_unavailable_reason": "sentiment refresh timeout",
+        }
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _run_simulation_with_timeout(
+    ticker: str,
+    price_frame,
+    price_column: str,
+    ml_forecast_snapshot,
+    horizon_days: int,
+    simulation_count: int,
+) -> dict[str, object]:
+    """Run simulation with a hard timeout so the UI cannot remain stuck indefinitely."""
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(
+        run_comparative_monte_carlo_simulation,
+        price_frame,
+        price_column=price_column,
+        ml_forecast_snapshot=ml_forecast_snapshot,
+        horizon_days=horizon_days,
+        simulation_count=simulation_count,
+    )
+    try:
+        return {"result": future.result(timeout=SIMULATION_TIMEOUT_SECONDS), "error": None}
+    except ValueError as exc:
+        return {"result": None, "error": str(exc)}
+    except FutureTimeoutError:
+        future.cancel()
+        LOGGER.warning(
+            "Run analysis simulation timed out for %s after %s seconds.",
+            ticker,
+            SIMULATION_TIMEOUT_SECONDS,
+        )
+        return {
+            "result": None,
+            "error": (
+                f"Scenario generation exceeded {SIMULATION_TIMEOUT_SECONDS} seconds and was skipped for this run."
+            ),
+        }
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
 def _build_analysis_signature(ticker: str, forecast_horizon: int, simulation_count: int) -> tuple[str, int, int]:
     """Build a stable cache key for the current analysis request."""
 
@@ -1114,14 +1197,14 @@ def main() -> None:
                 key="simulation_count_input",
             )
             st.markdown(
-                '<p class="control-note">These controls feed the existing simulation and report-generation workflows without altering their underlying logic.</p>',
+                '<p class="control-note">Adjust the forecast range and scenario count used in the analysis and report output.</p>',
                 unsafe_allow_html=True,
             )
 
         _render_section_intro(
             "Stored Coverage",
             "Current assets available in the local database",
-            "This view reflects the same stored asset inventory the app already uses for the dropdown, presented as an operations-oriented coverage table.",
+            "Review the current stored asset universe before selecting the next analysis target.",
         )
         if available_assets:
             st.dataframe(
@@ -1259,13 +1342,30 @@ def main() -> None:
             expanded=True,
         )
         try:
+            resolved_dataset_ticker = str(metadata.get("ticker") or "").strip().upper()
+            if resolved_dataset_ticker != st.session_state.active_ticker:
+                raise RuntimeError(
+                    "The loaded SQL dataset does not match the active asset selection. "
+                    "Reload the asset and run the analysis again."
+                )
+            if price_frame.empty or "analysis_price" not in price_frame.columns:
+                raise RuntimeError(
+                    "The loaded SQL dataset is missing the price history required for analysis."
+                )
+            LOGGER.info(
+                "Run analysis SQL dataset resolved: active_ticker=%s metadata_ticker=%s rows=%s",
+                st.session_state.active_ticker,
+                resolved_dataset_ticker,
+                len(price_frame),
+            )
+
             sentiment_status = st.session_state.sentiment_status_by_ticker.get(
                 st.session_state.active_ticker
             )
             if sentiment_status is None:
                 LOGGER.info("Run analysis sentiment fetch started: ticker=%s", st.session_state.active_ticker)
                 analysis_status_indicator.write("Fetching recent sentiment context.")
-                sentiment_status = app_data.ensure_sentiment_for_ticker(
+                sentiment_status = _ensure_sentiment_with_timeout(
                     st.session_state.active_ticker,
                     page_size=DEFAULT_SENTIMENT_PAGE_SIZE,
                 )
@@ -1299,18 +1399,16 @@ def main() -> None:
             sentiment_summary = app_data.get_sentiment_summary(sentiment_rows)
             recent_prices = app_data.get_recent_price_table(price_frame, rows=10)
 
-            simulation_result = None
-            simulation_error = None
-            try:
-                simulation_result = run_comparative_monte_carlo_simulation(
-                    price_frame,
-                    price_column="analysis_price",
-                    ml_forecast_snapshot=ml_summary["snapshot"],
-                    horizon_days=forecast_horizon,
-                    simulation_count=simulation_count,
-                )
-            except ValueError as exc:
-                simulation_error = str(exc)
+            simulation_payload = _run_simulation_with_timeout(
+                st.session_state.active_ticker,
+                price_frame,
+                price_column="analysis_price",
+                ml_forecast_snapshot=ml_summary["snapshot"],
+                horizon_days=forecast_horizon,
+                simulation_count=simulation_count,
+            )
+            simulation_result = simulation_payload["result"]
+            simulation_error = simulation_payload["error"]
             LOGGER.info(
                 "Run analysis simulation completed: ticker=%s simulation_error=%s",
                 st.session_state.active_ticker,
@@ -1334,6 +1432,11 @@ def main() -> None:
                 "simulation_error": simulation_error,
             }
             st.session_state.analysis_error = None
+            LOGGER.info(
+                "Run analysis outputs stored: ticker=%s signature=%s",
+                st.session_state.active_ticker,
+                analysis_signature,
+            )
             analysis_status_indicator.update(
                 label=f"Analysis complete for {st.session_state.active_ticker}.",
                 state="complete",
@@ -1509,7 +1612,7 @@ def main() -> None:
         _render_section_intro(
             "Model Layer",
             "Machine learning signal calibration",
-            "This layer combines historical market structure, downside and volatility context, and sentiment into a composite research weighting engine rather than a guaranteed forecast.",
+            "This section summarizes the model-based research signal alongside the broader market and sentiment context.",
         )
 
         if not ml_summary["available"]:
@@ -1521,7 +1624,7 @@ def main() -> None:
             training_window = ml_summary.get("training_window") or {}
 
             _render_minor_label("Target Definition")
-            st.info(target_definition.get("summary", "The current ML target definition is unavailable."))
+            st.info(target_definition.get("summary", "The current model target definition is unavailable."))
 
             overview_columns = st.columns(4)
             overview_columns[0].metric("Composite ML Score", _format_number(snapshot.get("composite_ml_score")))
@@ -1551,7 +1654,7 @@ def main() -> None:
             ]
             score_reason_rows = [row for row in score_reason_rows if row["Reason"]]
             if score_reason_rows:
-                st.caption("ML coverage notes")
+                st.caption("Model notes")
                 st.dataframe(score_reason_rows, use_container_width=True, hide_index=True)
 
             model_detail_rows = [
@@ -1656,10 +1759,10 @@ def main() -> None:
                 and sentiment_status.get("status") == "database"
                 and not sentiment_ui_message
             ):
-                st.caption("Recent sentiment was loaded from the local database cache.")
+                st.caption("Recent sentiment was loaded from the stored article set.")
 
             _render_inline_note(
-                "Recent news sentiment is based on stored headline and article records plus a lightweight lexical score intended for directional context rather than deep NLP inference."
+                "Recent news sentiment is based on stored headline and article records and is intended to provide directional context for the broader analysis."
             )
             _render_sentiment_summary(sentiment_summary)
 
